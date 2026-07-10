@@ -1,0 +1,29 @@
+get:
+  summary: Get a patch note by ID
+  operationId: getPatchNoteById
+  tags:
+    - patch-notes
+  parameters:
+    - $ref: "../../components/parameters/patch-note-id.yaml"
+  responses:
+    "200":
+      description: Patch note retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../components/schemas/patch-note.yaml"
+    "404":
+      description: Patch note not found.
+
+delete:
+  summary: Delete a patch note by ID
+  operationId: deletePatchNoteById
+  tags:
+    - patch-notes
+  parameters:
+    - $ref: "../../components/parameters/patch-note-id.yaml"
+  responses:
+    "204":
+      description: Patch note deleted successfully.
+    "404":
+      description: Patch note not found.

@@ -18,9 +18,9 @@ tags:
 
 paths:
   /patch-notes:
-    $ref: "./paths/patch-notes.yaml#/~1patch-notes"
+    $ref: "./paths/patch-notes/patch-notes.yaml"
   /patch-notes/{patchNoteId}:
-    $ref: "./paths/patch-notes.yaml#/~1patch-notes~1{patchNoteId}"
+    $ref: "./paths/patch-notes/patch-notes-by-id.yaml"
 
 components:
   parameters:
