@@ -1,0 +1,6 @@
+generatorName: rust-axum
+inputSpec: "openapi/openapi.yaml"
+outputDir: "server/generated"
+additionalProperties:
+  packageName: graph-api
+  packageVersion: 0.0.1

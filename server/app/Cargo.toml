@@ -1,0 +1,7 @@
+[package]
+name = "graph-server"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+graph-api = { path = "../generated" }

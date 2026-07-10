@@ -206,11 +206,10 @@ settings:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
       '@openapitools/openapi-generator-cli':
         specifier: ^2.39.1
         version: 2.39.1
-    devDependencies:
       '@redocly/cli':
         specifier: ^2.38.0
         version: 2.38.0
