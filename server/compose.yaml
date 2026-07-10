@@ -1,0 +1,43 @@
+services:
+  app:
+    image: rust:latest
+    working_dir: /workspace/server
+    command: cargo run -p graph-server
+    environment:
+      CARGO_HOME: /cargo
+      CARGO_TARGET_DIR: /cargo-target
+      DATABASE_URL: mysql://graph:graph@db:3306/graph
+      GRAPH_SERVER_ADDR: 0.0.0.0:3000
+      RUST_LOG: graph_server=info,tower_http=info
+    ports:
+      - "3000:3000"
+    volumes:
+      - ..:/workspace
+      - cargo-home:/cargo
+      - cargo-target:/cargo-target
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: graph
+      MARIADB_USER: graph
+      MARIADB_PASSWORD: graph
+      MARIADB_ROOT_PASSWORD: graph-root
+    ports:
+      - "3307:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  cargo-home:
+  cargo-target:
+  mariadb-data:
