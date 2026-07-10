@@ -272,8 +272,8 @@ impl PatchNotes for Api {
                 error
             })?;
 
-        let mut response = ListPatchNotes200Response::new(items);
-        response.next_cursor = next_cursor.map(Nullable::Present);
+        let next_cursor = next_cursor.map_or(Nullable::Null, Nullable::Present);
+        let response = ListPatchNotes200Response::new(items, next_cursor);
 
         Ok(ListPatchNotesResponse::Status200_PatchNotesRetrievedSuccessfully(response))
     }

@@ -1,6 +1,7 @@
 type: object
 required:
   - items
+  - nextCursor
 properties:
   items:
     type: array
