@@ -1,0 +1,8 @@
+type: string
+description: Target of the patch note.
+enum:
+  - creativePro
+  - frontier
+  - life
+  - leonGunWar2
+  - sclat

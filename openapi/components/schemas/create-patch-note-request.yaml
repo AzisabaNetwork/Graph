@@ -1,0 +1,18 @@
+type: object
+required:
+  - target
+  - category
+  - title
+  - body
+properties:
+  target:
+    $ref: "./patch-note.yaml#/properties/target"
+
+  category:
+    $ref: "./patch-note.yaml#/properties/category"
+
+  title:
+    $ref: "./patch-note.yaml#/properties/title"
+
+  body:
+    $ref: "./patch-note.yaml#/properties/body"

@@ -1,0 +1,7 @@
+type: string
+description: Category of the patch note.
+enum:
+  - balance
+  - feature
+  - fix
+  - improvement

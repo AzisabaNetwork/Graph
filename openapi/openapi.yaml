@@ -3,6 +3,40 @@ openapi: 3.1.0
 info:
   title: Azisaba Graph API
   version: 0.0.1
+  license:
+    name: MIT License
+    identifier: MIT
 
 servers:
   - url: "https://graph.azisaba.net"
+
+security: [ ]
+
+tags:
+  - name: patch-notes
+    description: Operations related to patch notes.
+
+paths:
+  /patch-notes:
+    $ref: "./paths/patch-notes.yaml#/~1patch-notes"
+  /patch-notes/{patchNoteId}:
+    $ref: "./paths/patch-notes.yaml#/~1patch-notes~1{patchNoteId}"
+
+components:
+  parameters:
+    PatchNoteId:
+      $ref: "./components/parameters/patch-note-id.yaml"
+
+  schemas:
+    CreatePatchNoteRequest:
+      $ref: "./components/schemas/create-patch-note-request.yaml"
+    ListPatchNotesResponse:
+      $ref: "./components/schemas/list-patch-notes-response.yaml"
+    PatchNote:
+      $ref: "./components/schemas/patch-note.yaml"
+    PatchNoteCategory:
+      $ref: "./components/schemas/patch-note-category.yaml"
+    PatchNoteId:
+      $ref: "./components/schemas/patch-note-id.yaml"
+    PatchNoteTarget:
+      $ref: "./components/schemas/patch-note-target.yaml"

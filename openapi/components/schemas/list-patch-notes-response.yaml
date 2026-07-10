@@ -1,0 +1,14 @@
+type: object
+required:
+  - items
+properties:
+  items:
+    type: array
+    items:
+      $ref: "./patch-note.yaml"
+
+  nextCursor:
+    type:
+      - string
+      - "null"
+    description: Cursor for retrieving the next page, or null if no more results are available.

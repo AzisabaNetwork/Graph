@@ -1,0 +1,30 @@
+type: object
+required:
+  - id
+  - target
+  - category
+  - title
+  - body
+  - createdAt
+properties:
+  id:
+    $ref: "./patch-note-id.yaml"
+
+  target:
+    $ref: "./patch-note-target.yaml"
+
+  category:
+    $ref: "./patch-note-category.yaml"
+
+  title:
+    type: string
+    description: Title of the patch note.
+
+  body:
+    type: string
+    description: Body text of the patch note.
+
+  createdAt:
+    type: string
+    format: date-time
+    description: Date and time when the patch note was created.
