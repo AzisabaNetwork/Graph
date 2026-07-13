@@ -16,3 +16,10 @@ properties:
 
   body:
     $ref: "./patch-note.yaml#/properties/body"
+
+  images:
+    type: array
+    description: Image files attached to the patch note.
+    items:
+      type: string
+      format: binary

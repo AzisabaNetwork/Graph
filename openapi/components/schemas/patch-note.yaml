@@ -5,6 +5,7 @@ required:
   - category
   - title
   - body
+  - imageUrls
   - createdAt
 properties:
   id:
@@ -23,6 +24,13 @@ properties:
   body:
     type: string
     description: Body text of the patch note.
+
+  imageUrls:
+    type: array
+    description: URLs of images attached to the patch note.
+    items:
+      type: string
+      format: uri
 
   createdAt:
     type: string
