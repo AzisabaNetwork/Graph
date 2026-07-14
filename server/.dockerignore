@@ -1,0 +1,6 @@
+.env
+target
+compose.yaml
+Dockerfile
+generator-config.yaml
+generated/.openapi-generator
