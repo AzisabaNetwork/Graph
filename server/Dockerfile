@@ -22,8 +22,8 @@ RUN useradd --create-home --uid 10001 graph
 COPY --from=builder /app/target/release/graph-server /usr/local/bin/graph-server
 
 USER graph
-EXPOSE 3000
+EXPOSE 8080
 
-ENV GRAPH_SERVER_ADDR=0.0.0.0:3000
+ENV GRAPH_SERVER_ADDR=0.0.0.0:8080
 
 ENTRYPOINT ["graph-server"]
