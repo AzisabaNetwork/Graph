@@ -1,3 +1,6 @@
-type: apiKey
-in: header
-name: Authorization
+type: http
+scheme: bearer
+bearerFormat: API key
+description: |
+  API key supplied using the Bearer authentication scheme.
+  Send it as `Authorization: Bearer <api-key>`.

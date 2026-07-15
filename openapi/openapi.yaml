@@ -14,10 +14,16 @@ security:
   - ApiKeyAuth: []
 
 tags:
+  - name: api-keys
+    description: Operations related to API keys.
   - name: patch-notes
     description: Operations related to patch notes.
 
 paths:
+  /api-keys:
+    $ref: "./paths/api-keys/api-keys.yaml"
+  /api-keys/{apiKeyId}:
+    $ref: "./paths/api-keys/api-keys-by-id.yaml"
   /patch-notes:
     $ref: "./paths/patch-notes/patch-notes.yaml"
   /patch-notes/{patchNoteId}:
@@ -25,10 +31,28 @@ paths:
 
 components:
   parameters:
+    ApiKeyId:
+      $ref: "./components/parameters/api-key-id.yaml"
     PatchNoteId:
       $ref: "./components/parameters/patch-note-id.yaml"
 
+  responses:
+    Unauthorized:
+      $ref: "./components/responses/unauthorized.yaml"
+    Forbidden:
+      $ref: "./components/responses/forbidden.yaml"
+
   schemas:
+    ApiKey:
+      $ref: "./components/schemas/api-key.yaml"
+    ApiKeyScope:
+      $ref: "./components/schemas/api-key-scope.yaml"
+    CreateApiKeyRequest:
+      $ref: "./components/schemas/create-api-key-request.yaml"
+    CreateApiKeyResponse:
+      $ref: "./components/schemas/create-api-key-response.yaml"
+    ListApiKeysResponse:
+      $ref: "./components/schemas/list-api-key-response.yaml"
     CreatePatchNoteRequest:
       $ref: "./components/schemas/create-patch-note-request.yaml"
     ListPatchNotesResponse:

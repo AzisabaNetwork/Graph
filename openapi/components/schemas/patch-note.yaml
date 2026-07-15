@@ -9,13 +9,13 @@ required:
   - createdAt
 properties:
   id:
-    $ref: "./patch-note-id.yaml"
+    $ref: "../../openapi.yaml#/components/schemas/PatchNoteId"
 
   target:
-    $ref: "./patch-note-target.yaml"
+    $ref: "../../openapi.yaml#/components/schemas/PatchNoteTarget"
 
   category:
-    $ref: "./patch-note-category.yaml"
+    $ref: "../../openapi.yaml#/components/schemas/PatchNoteCategory"
 
   title:
     type: string

@@ -1,0 +1,7 @@
+name: apiKeyId
+in: path
+required: true
+description: Public ID of the API key.
+schema:
+  type: string
+  minLength: 1

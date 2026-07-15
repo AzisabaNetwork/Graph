@@ -3,4 +3,4 @@ in: path
 required: true
 description: Unique identifier of the patch note.
 schema:
-  $ref: "../schemas/patch-note-id.yaml"
+  $ref: "../../openapi.yaml#/components/schemas/PatchNoteId"

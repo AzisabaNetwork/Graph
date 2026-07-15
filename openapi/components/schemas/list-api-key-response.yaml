@@ -6,7 +6,7 @@ properties:
   items:
     type: array
     items:
-      $ref: "../../openapi.yaml#/components/schemas/PatchNote"
+      $ref: "../../openapi.yaml#/components/schemas/ApiKey"
 
   nextCursor:
     type:

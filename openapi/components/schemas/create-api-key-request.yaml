@@ -1,0 +1,18 @@
+type: object
+additionalProperties: false
+required:
+  - name
+  - scopes
+properties:
+  name:
+    $ref: "./api-key.yaml#/properties/name"
+
+  scopes:
+    allOf:
+      - $ref: "./api-key.yaml#/properties/scopes"
+    description: |
+      Scopes requested for the new API key. Every requested scope must be
+      authorized for delegation by the API key making this request.
+
+  expiresAt:
+    $ref: "./api-key.yaml#/properties/expiresAt"

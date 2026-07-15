@@ -1,15 +1,15 @@
 get:
-  summary: List patch notes
-  operationId: listPatchNotes
+  summary: List API keys.
+  operationId: listApiKeys
   tags:
-    - patch-notes
+    - api-keys
   security:
     - ApiKeyAuth:
-        - patch-notes:read
+        - api-keys:read
   parameters:
     - name: limit
       in: query
-      description: Maximum number of patch notes to return.
+      description: Maximum number of API keys to return.
       schema:
         type: integer
         minimum: 1
@@ -21,25 +21,13 @@ get:
       description: Cursor returned by the previous request.
       schema:
         type: string
-
-    - name: target
-      in: query
-      description: Target by which to filter patch notes.
-      schema:
-        $ref: "../../openapi.yaml#/components/schemas/PatchNoteTarget"
-
-    - name: category
-      in: query
-      description: Category by which to filter patch notes.
-      schema:
-        $ref: "../../openapi.yaml#/components/schemas/PatchNoteCategory"
   responses:
     "200":
-      description: Patch notes retrieved successfully.
+      description: API keys retrieved successfully.
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/ListPatchNotesResponse"
+            $ref: "../../openapi.yaml#/components/schemas/ListApiKeysResponse"
     "400":
       description: Invalid query parameters.
     "401":
@@ -48,26 +36,26 @@ get:
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 post:
-  summary: Create a patch note
-  operationId: createPatchNote
+  summary: Create an API key
+  operationId: createApiKey
   tags:
-    - patch-notes
+    - api-keys
   security:
     - ApiKeyAuth:
-        - patch-notes:write
+        - api-keys:write
   requestBody:
     required: true
     content:
-      multipart/form-data:
+      application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/CreatePatchNoteRequest"
+          $ref: "../../openapi.yaml#/components/schemas/CreateApiKeyRequest"
   responses:
     "201":
-      description: Patch note created successfully.
+      description: API key created successfully
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/PatchNote"
+            $ref: "../../openapi.yaml#/components/schemas/CreateApiKeyResponse"
     "400":
       description: Invalid request body.
     "401":

@@ -1,0 +1,43 @@
+get:
+  summary: Get an API key by ID
+  operationId: getApiKeyById
+  tags:
+    - api-keys
+  security:
+    - ApiKeyAuth:
+        - api-keys:read
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
+  responses:
+    "200":
+      description: API key retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/ApiKey"
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: API key not found.
+
+delete:
+  summary: Delete an API key by ID
+  operationId: deleteApiKeyById
+  tags:
+    - api-keys
+  security:
+    - ApiKeyAuth:
+        - api-keys:write
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
+  responses:
+    "204":
+      description: API key deleted successfully.
+    "404":
+      description: API key not found.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"

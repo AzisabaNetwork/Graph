@@ -7,16 +7,20 @@ get:
     - ApiKeyAuth:
         - patch-notes:read
   parameters:
-    - $ref: "../../components/parameters/patch-note-id.yaml"
+    - $ref: "../../openapi.yaml#/components/parameters/PatchNoteId"
   responses:
     "200":
       description: Patch note retrieved successfully.
       content:
         application/json:
           schema:
-            $ref: "../../components/schemas/patch-note.yaml"
+            $ref: "../../openapi.yaml#/components/schemas/PatchNote"
     "404":
       description: Patch note not found.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 delete:
   summary: Delete a patch note by ID
@@ -25,11 +29,15 @@ delete:
     - patch-notes
   security:
     - ApiKeyAuth:
-        - patch-notes:delete
+        - patch-notes:write
   parameters:
-    - $ref: "../../components/parameters/patch-note-id.yaml"
+    - $ref: "../../openapi.yaml#/components/parameters/PatchNoteId"
   responses:
     "204":
       description: Patch note deleted successfully.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
     "404":
       description: Patch note not found.

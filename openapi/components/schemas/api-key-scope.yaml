@@ -1,0 +1,7 @@
+type: string
+description: Permission granted to an API key.
+enum:
+  - api-keys:read
+  - api-keys:write
+  - patch-notes:read
+  - patch-notes:write
