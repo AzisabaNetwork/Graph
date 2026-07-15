@@ -1,4 +1,5 @@
 use crate::api::Api;
+use crate::auth::context::current_api_key;
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
@@ -12,9 +13,9 @@ use graph_api::apis::patch_notes::{
     ListPatchNotesResponse, PatchNotes,
 };
 use graph_api::models::{
-    ApiKey, ApiKeyScope, CreatePatchNoteRequest, DeletePatchNoteByIdPathParams,
-    GetPatchNoteByIdPathParams, ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner,
-    ListPatchNotesQueryParams, PatchNoteCategory, PatchNoteTarget,
+    ApiKeyScope, CreatePatchNoteRequest, DeletePatchNoteByIdPathParams, GetPatchNoteByIdPathParams,
+    ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner, ListPatchNotesQueryParams,
+    PatchNoteCategory, PatchNoteTarget,
 };
 use graph_api::types::{ByteArray, Nullable};
 use http::Method;
@@ -44,9 +45,9 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         body: Multipart,
     ) -> Result<CreatePatchNoteResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
             return Ok(CreatePatchNoteResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
         }
@@ -176,9 +177,9 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         path_params: DeletePatchNoteByIdPathParams,
     ) -> Result<DeletePatchNoteByIdResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
             return Ok(DeletePatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
         }
@@ -204,9 +205,9 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         path_params: GetPatchNoteByIdPathParams,
     ) -> Result<GetPatchNoteByIdResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
             return Ok(GetPatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
         }
@@ -244,9 +245,9 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         query_params: ListPatchNotesQueryParams,
     ) -> Result<ListPatchNotesResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
             return Ok(
                 ListPatchNotesResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,

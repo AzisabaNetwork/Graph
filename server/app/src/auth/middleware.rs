@@ -1,4 +1,5 @@
 use crate::api::Api;
+use crate::auth::context::with_api_key;
 use crate::auth::credentials::ApiKeyCredentials;
 use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
@@ -77,11 +78,12 @@ where
         let api = self.api.clone();
 
         Box::pin(async move {
-            if let Err(status) = authenticate_request(&api, &mut request).await {
-                return Ok(status.into_response());
-            }
+            let api_key = match authenticate_request(&api, &mut request).await {
+                Ok(api_key) => api_key,
+                Err(status) => return Ok(status.into_response()),
+            };
 
-            inner.call(request).await
+            with_api_key(api_key, inner.call(request)).await
         })
     }
 }
@@ -92,7 +94,7 @@ impl From<sqlx::Error> for ApiKeyVerificationError {
     }
 }
 
-async fn authenticate_request(api: &Api, request: &mut Request) -> Result<(), StatusCode> {
+async fn authenticate_request(api: &Api, request: &mut Request) -> Result<ApiKey, StatusCode> {
     let authorization = request
         .headers()
         .get(AUTHORIZATION)
@@ -116,8 +118,8 @@ async fn authenticate_request(api: &Api, request: &mut Request) -> Result<(), St
         }
     };
 
-    request.extensions_mut().insert(api_key);
-    Ok(())
+    request.extensions_mut().insert(api_key.clone());
+    Ok(api_key)
 }
 
 async fn verify_api_key(

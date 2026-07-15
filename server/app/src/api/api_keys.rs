@@ -1,4 +1,5 @@
 use crate::api::Api;
+use crate::auth::context::current_api_key;
 use crate::auth::credentials::ApiKeyCredentials;
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
@@ -11,7 +12,7 @@ use graph_api::apis::api_keys::{
     ListApiKeysResponse,
 };
 use graph_api::models::{
-    ApiKey, ApiKeyScope, CreateApiKey201Response, CreateApiKeyRequest, DeleteApiKeyByIdPathParams,
+    ApiKeyScope, CreateApiKey201Response, CreateApiKeyRequest, DeleteApiKeyByIdPathParams,
     GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeys200ResponseItemsInner,
     ListApiKeysQueryParams,
 };
@@ -40,9 +41,9 @@ impl ApiKeys for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         body: CreateApiKeyRequest,
     ) -> Result<CreateApiKeyResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
             return Ok(
                 CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
@@ -129,9 +130,9 @@ impl ApiKeys for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         path_params: DeleteApiKeyByIdPathParams,
     ) -> Result<DeleteApiKeyByIdResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
             return Ok(
                 DeleteApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
@@ -150,9 +151,9 @@ impl ApiKeys for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         path_params: GetApiKeyByIdPathParams,
     ) -> Result<GetApiKeyByIdResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonRead) {
             return Ok(
                 GetApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
@@ -190,9 +191,9 @@ impl ApiKeys for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
-        api_key: ApiKey,
         query_params: ListApiKeysQueryParams,
     ) -> Result<ListApiKeysResponse, String> {
+        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonRead) {
             return Ok(
                 ListApiKeysResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
