@@ -1,4 +1,6 @@
-use crate::{api::Api, pagination::Cursor};
+use crate::api::Api;
+use crate::auth::scope::ApiKeyScopeExt;
+use crate::pagination::Cursor;
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 use axum::extract::Host;
@@ -10,21 +12,30 @@ use graph_api::apis::patch_notes::{
     ListPatchNotesResponse, PatchNotes,
 };
 use graph_api::models::{
-    CreatePatchNoteRequest, DeletePatchNoteByIdPathParams, GetPatchNoteByIdPathParams,
-    ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner, ListPatchNotesQueryParams,
-    PatchNoteCategory, PatchNoteTarget,
+    ApiKey, ApiKeyScope, CreatePatchNoteRequest, DeletePatchNoteByIdPathParams,
+    GetPatchNoteByIdPathParams, ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner,
+    ListPatchNotesQueryParams, PatchNoteCategory, PatchNoteTarget,
 };
 use graph_api::types::{ByteArray, Nullable};
 use http::Method;
-use sqlx::{MySql, QueryBuilder};
+use sqlx::{FromRow, MySql, QueryBuilder};
 use std::{collections::HashMap, str::FromStr};
 use uuid::Uuid;
 
-type PatchNotesCursor = Cursor<DateTime<Utc>, Uuid>;
-type PatchNoteRow = (Uuid, String, String, String, String, DateTime<Utc>);
-
 const DEFAULT_PATCH_NOTES_LIMIT: i32 = 20;
 const MAX_PATCH_NOTES_LIMIT: i32 = 100;
+
+type PatchNoteCursor = Cursor<DateTime<Utc>, Uuid>;
+
+#[derive(Debug, FromRow)]
+struct PatchNoteRecord {
+    id: Uuid,
+    target: String,
+    category: String,
+    title: String,
+    body: String,
+    created_at: DateTime<Utc>,
+}
 
 #[async_trait]
 impl PatchNotes for Api {
@@ -33,8 +44,13 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
+        api_key: ApiKey,
         body: Multipart,
     ) -> Result<CreatePatchNoteResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
+            return Ok(CreatePatchNoteResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
+        }
+
         let (request, image_content_types) = match parse_create_patch_note_multipart(body).await {
             Ok(request) => request,
             Err(error) => {
@@ -160,8 +176,13 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
+        api_key: ApiKey,
         path_params: DeletePatchNoteByIdPathParams,
     ) -> Result<DeletePatchNoteByIdResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
+            return Ok(DeletePatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
+        }
+
         let result = sqlx::query("DELETE FROM patch_notes WHERE id = ?")
             .bind(path_params.patch_note_id)
             .execute(&self.pool)
@@ -183,9 +204,14 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
+        api_key: ApiKey,
         path_params: GetPatchNoteByIdPathParams,
     ) -> Result<GetPatchNoteByIdResponse, String> {
-        let patch_note = sqlx::query_as::<_, PatchNoteRow>(
+        if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
+            return Ok(GetPatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
+        }
+
+        let patch_note = sqlx::query_as::<_, PatchNoteRecord>(
             r#"
             SELECT id, target, category, title, body, created_at
             FROM patch_notes
@@ -200,18 +226,15 @@ impl PatchNotes for Api {
             error.to_string()
         })?;
 
-        let Some(patch_note) = patch_note else {
+        let Some(record) = patch_note else {
             return Ok(GetPatchNoteByIdResponse::Status404_PatchNoteNotFound);
         };
-        let (id, target, category, title, body, created_at) = patch_note;
-        let image_urls = self.load_patch_note_image_urls(&[id]).await?;
-        let image_urls = image_urls.get(&id).cloned().unwrap_or_default();
+        let image_urls = self.load_patch_note_image_urls(&[record.id]).await?;
+        let image_urls = image_urls.get(&record.id).cloned().unwrap_or_default();
 
         Ok(
             GetPatchNoteByIdResponse::Status200_PatchNoteRetrievedSuccessfully(
-                ListPatchNotes200ResponseItemsInner::new(
-                    id, target, category, title, body, image_urls, created_at,
-                ),
+                patch_note_from_record(record, image_urls),
             ),
         )
     }
@@ -221,8 +244,15 @@ impl PatchNotes for Api {
         _method: Method,
         _host: Host,
         _cookies: CookieJar,
+        api_key: ApiKey,
         query_params: ListPatchNotesQueryParams,
     ) -> Result<ListPatchNotesResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
+            return Ok(
+                ListPatchNotesResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
+            );
+        }
+
         let limit = query_params
             .limit
             .unwrap_or(DEFAULT_PATCH_NOTES_LIMIT)
@@ -245,7 +275,7 @@ impl PatchNotes for Api {
         };
 
         let cursor = match query_params.cursor.as_deref() {
-            Some(cursor) => match PatchNotesCursor::decode(cursor) {
+            Some(cursor) => match PatchNoteCursor::decode(cursor) {
                 Ok(cursor) => Some(cursor),
                 Err(_) => return Ok(ListPatchNotesResponse::Status400_InvalidQueryParameters),
             },
@@ -284,7 +314,7 @@ impl PatchNotes for Api {
             .push_bind((limit + 1) as i64);
 
         let mut rows = query
-            .build_query_as::<PatchNoteRow>()
+            .build_query_as::<PatchNoteRecord>()
             .fetch_all(&self.pool)
             .await
             .map_err(|error| {
@@ -295,9 +325,9 @@ impl PatchNotes for Api {
         let next_cursor = if rows.len() > limit {
             rows.pop();
             let last = rows.last().expect("page must include at least one row");
-            let cursor = PatchNotesCursor {
-                value: last.5,
-                tie_breaker: last.0,
+            let cursor = PatchNoteCursor {
+                value: last.created_at,
+                tie_breaker: last.id,
             };
 
             Some(cursor.encode().map_err(|error| {
@@ -309,17 +339,14 @@ impl PatchNotes for Api {
         };
 
         let image_urls = self
-            .load_patch_note_image_urls(&rows.iter().map(|row| row.0).collect::<Vec<_>>())
+            .load_patch_note_image_urls(&rows.iter().map(|record| record.id).collect::<Vec<_>>())
             .await?;
 
         let items = rows
             .into_iter()
-            .map(|row| {
-                let (id, target, category, title, body, created_at) = row;
-                let image_urls = image_urls.get(&id).cloned().unwrap_or_default();
-                ListPatchNotes200ResponseItemsInner::new(
-                    id, target, category, title, body, image_urls, created_at,
-                )
+            .map(|record| {
+                let record_image_urls = image_urls.get(&record.id).cloned().unwrap_or_default();
+                patch_note_from_record(record, record_image_urls)
             })
             .collect::<Vec<_>>();
 
@@ -474,4 +501,22 @@ fn image_extension(content_type: &str) -> &'static str {
         "image/webp" => ".webp",
         _ => "",
     }
+}
+
+fn patch_note_from_record(
+    record: PatchNoteRecord,
+    image_urls: Vec<String>,
+) -> ListPatchNotes200ResponseItemsInner {
+    let PatchNoteRecord {
+        id,
+        target,
+        category,
+        title,
+        body,
+        created_at,
+    } = record;
+
+    ListPatchNotes200ResponseItemsInner::new(
+        id, target, category, title, body, image_urls, created_at,
+    )
 }

@@ -2,15 +2,15 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Cursor<V, T> {
-    pub value: V,
-    pub tie_breaker: T,
+pub(crate) struct Cursor<V, T> {
+    pub(crate) value: V,
+    pub(crate) tie_breaker: T,
 }
 
 #[derive(Debug)]
-pub enum CursorError {
+pub(crate) enum CursorError {
     InvalidJson,
     InvalidBase64,
 }
@@ -20,7 +20,7 @@ where
     V: Serialize,
     T: Serialize,
 {
-    pub fn encode(&self) -> Result<String, CursorError> {
+    pub(crate) fn encode(&self) -> Result<String, CursorError> {
         let json = serde_json::to_vec(self).map_err(|_| CursorError::InvalidJson)?;
 
         Ok(URL_SAFE_NO_PAD.encode(json))
@@ -32,7 +32,7 @@ where
     V: for<'de> Deserialize<'de>,
     T: for<'de> Deserialize<'de>,
 {
-    pub fn decode(value: &str) -> Result<Self, CursorError> {
+    pub(crate) fn decode(value: &str) -> Result<Self, CursorError> {
         let bytes = URL_SAFE_NO_PAD
             .decode(value)
             .map_err(|_| CursorError::InvalidBase64)?;

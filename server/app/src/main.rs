@@ -1,7 +1,9 @@
 mod api;
+mod auth;
 mod pagination;
 
 use api::{Api, ImageStorage};
+use auth::middleware::ApiKeyAuthLayer;
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client as S3Client, config::Region};
@@ -29,13 +31,21 @@ async fn main() {
         .expect("failed to run database migrations");
 
     let image_storage = build_image_storage().await;
+    let api = Api::new(pool, image_storage);
+    if let Some(bootstrap_api_key) = non_empty_env("GRAPH_BOOTSTRAP_API_KEY") {
+        api.provision_bootstrap_api_key(&bootstrap_api_key)
+            .await
+            .expect("failed to provision bootstrap API key");
+        tracing::info!("bootstrap API key provisioned");
+    }
 
     let addr = env::var("GRAPH_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
     let addr: SocketAddr = addr
         .parse()
         .expect("GRAPH_SERVER_ADDR must be a valid socket address");
 
-    let app = graph_api::server::new(Arc::new(Api::new(pool, image_storage)))
+    let app = graph_api::server::new(Arc::new(api.clone()))
+        .layer(ApiKeyAuthLayer::new(api))
         .layer(TraceLayer::new_for_http());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -48,12 +58,12 @@ async fn main() {
 }
 
 async fn build_image_storage() -> Option<ImageStorage> {
-    let bucket = optional_env("R2_BUCKET");
-    let public_url_base = optional_env("R2_PUBLIC_URL_BASE");
-    let access_key_id = optional_env("R2_ACCESS_KEY_ID");
-    let secret_access_key = optional_env("R2_SECRET_ACCESS_KEY");
-    let endpoint_url = optional_env("R2_ENDPOINT_URL").or_else(|| {
-        optional_env("R2_ACCOUNT_ID")
+    let bucket = non_empty_env("R2_BUCKET");
+    let public_url_base = non_empty_env("R2_PUBLIC_URL_BASE");
+    let access_key_id = non_empty_env("R2_ACCESS_KEY_ID");
+    let secret_access_key = non_empty_env("R2_SECRET_ACCESS_KEY");
+    let endpoint_url = non_empty_env("R2_ENDPOINT_URL").or_else(|| {
+        non_empty_env("R2_ACCOUNT_ID")
             .map(|account_id| format!("https://{account_id}.r2.cloudflarestorage.com"))
     });
 
@@ -95,6 +105,6 @@ async fn build_image_storage() -> Option<ImageStorage> {
     ))
 }
 
-fn optional_env(key: &str) -> Option<String> {
+fn non_empty_env(key: &str) -> Option<String> {
     env::var(key).ok().filter(|value| !value.trim().is_empty())
 }
