@@ -10,7 +10,8 @@ info:
 servers:
   - url: "https://graph.azisaba.net"
 
-security: [ ]
+security:
+  - ApiKeyAuth: []
 
 tags:
   - name: patch-notes
@@ -40,3 +41,7 @@ components:
       $ref: "./components/schemas/patch-note-id.yaml"
     PatchNoteTarget:
       $ref: "./components/schemas/patch-note-target.yaml"
+
+  securitySchemes:
+    ApiKeyAuth:
+      $ref: "./components/security-schemes/api-key-auth.yaml"

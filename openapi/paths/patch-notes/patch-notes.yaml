@@ -3,6 +3,9 @@ get:
   operationId: listPatchNotes
   tags:
     - patch-notes
+  security:
+    - ApiKeyAuth:
+        - patch-notes:read
   parameters:
     - name: limit
       in: query
@@ -45,6 +48,9 @@ post:
   operationId: createPatchNote
   tags:
     - patch-notes
+  security:
+    - ApiKeyAuth:
+        - patch-notes:write
   requestBody:
     required: true
     content:

@@ -3,6 +3,9 @@ get:
   operationId: getPatchNoteById
   tags:
     - patch-notes
+  security:
+    - ApiKeyAuth:
+        - patch-notes:read
   parameters:
     - $ref: "../../components/parameters/patch-note-id.yaml"
   responses:
@@ -20,6 +23,9 @@ delete:
   operationId: deletePatchNoteById
   tags:
     - patch-notes
+  security:
+    - ApiKeyAuth:
+        - patch-notes:delete
   parameters:
     - $ref: "../../components/parameters/patch-note-id.yaml"
   responses:
