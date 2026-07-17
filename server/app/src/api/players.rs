@@ -224,19 +224,22 @@ impl Players for Api {
         let mut query = QueryBuilder::<MySql>::new("UPDATE players SET ");
         let mut updates = query.separated(", ");
         if let Some(discord_id) = body.discord_id {
-            updates.push("discord_id = ").push_bind(discord_id);
+            updates
+                .push("discord_id = ")
+                .push_bind_unseparated(discord_id);
         }
         if let Some(status) = status {
-            updates.push("status = ").push_bind(status);
+            updates.push("status = ").push_bind_unseparated(status);
         }
         if let Some(current_server) = body.current_server {
-            updates.push("current_server = ").push_bind(current_server);
+            updates
+                .push("current_server = ")
+                .push_bind_unseparated(current_server);
         }
         if let Some(bio) = body.bio {
-            updates.push("bio = ").push_bind(bio);
+            updates.push("bio = ").push_bind_unseparated(bio);
         }
         query.push(" WHERE id = ").push_bind(path_params.player_id);
-
         query
             .build()
             .execute(&mut *transaction)
