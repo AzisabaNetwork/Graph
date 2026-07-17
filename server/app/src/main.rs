@@ -3,12 +3,10 @@ mod auth;
 mod mojang;
 mod pagination;
 
-use api::{Api, ImageStorage};
+use crate::api::non_empty_env;
+use api::{Api, ObjectStorage};
 use auth::middleware::ApiKeyAuthLayer;
-use aws_config::BehaviorVersion;
-use aws_credential_types::Credentials;
-use aws_sdk_s3::{Client as S3Client, config::Region};
-use mojang::MojangClient;
+use mojang::PlayerDbClient;
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
@@ -32,9 +30,12 @@ async fn main() {
         .await
         .expect("failed to run database migrations");
 
-    let image_storage = build_image_storage().await;
-    let mojang = MojangClient::new().expect("failed to create Mojang API client");
-    let api = Api::new(pool, image_storage, mojang);
+    let api = Api::new(
+        pool,
+        ObjectStorage::from_env().await,
+        PlayerDbClient::new().expect("failed to create PlayerDB client"),
+    );
+
     if let Some(bootstrap_api_key) = non_empty_env("GRAPH_BOOTSTRAP_API_KEY") {
         api.provision_bootstrap_api_key(&bootstrap_api_key)
             .await
@@ -58,56 +59,4 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .expect("graph-server failed");
-}
-
-async fn build_image_storage() -> Option<ImageStorage> {
-    let bucket = non_empty_env("R2_BUCKET");
-    let public_url_base = non_empty_env("R2_PUBLIC_URL_BASE");
-    let access_key_id = non_empty_env("R2_ACCESS_KEY_ID");
-    let secret_access_key = non_empty_env("R2_SECRET_ACCESS_KEY");
-    let endpoint_url = non_empty_env("R2_ENDPOINT_URL").or_else(|| {
-        non_empty_env("R2_ACCOUNT_ID")
-            .map(|account_id| format!("https://{account_id}.r2.cloudflarestorage.com"))
-    });
-
-    let (
-        Some(bucket),
-        Some(public_url_base),
-        Some(access_key_id),
-        Some(secret_access_key),
-        Some(endpoint_url),
-    ) = (
-        bucket,
-        public_url_base,
-        access_key_id,
-        secret_access_key,
-        endpoint_url,
-    )
-    else {
-        tracing::warn!("R2 image storage is not configured; image uploads will fail");
-        return None;
-    };
-
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .region(Region::new("auto"))
-        .endpoint_url(endpoint_url)
-        .credentials_provider(Credentials::new(
-            access_key_id,
-            secret_access_key,
-            None,
-            None,
-            "r2-env",
-        ))
-        .load()
-        .await;
-
-    Some(ImageStorage::new(
-        S3Client::new(&config),
-        bucket,
-        public_url_base,
-    ))
-}
-
-fn non_empty_env(key: &str) -> Option<String> {
-    env::var(key).ok().filter(|value| !value.trim().is_empty())
 }

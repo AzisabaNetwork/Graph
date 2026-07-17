@@ -1,7 +1,7 @@
-use crate::api::Api;
+use crate::api::{Api, into_nullable};
 use crate::auth::context::current_api_key;
 use crate::auth::scope::ApiKeyScopeExt;
-use crate::mojang::{MojangClient, MojangError};
+use crate::mojang::PlayerDbError;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum::extract::Host;
@@ -14,7 +14,6 @@ use graph_api::models::{
     ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
     UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
 };
-use graph_api::types::Nullable;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
 use std::str::FromStr;
@@ -35,6 +34,31 @@ struct PlayerRecord {
     bio: Option<String>,
 }
 
+impl PlayerRecord {
+    fn into_list_item(
+        self,
+        username: String,
+        include_details: bool,
+    ) -> ListPlayers200ResponseItemsInner {
+        let PlayerRecord {
+            id,
+            discord_id,
+            status,
+            current_server,
+            bio,
+        } = self;
+
+        ListPlayers200ResponseItemsInner::new(
+            id,
+            into_nullable(include_details.then_some(discord_id).flatten()),
+            username,
+            status,
+            into_nullable(current_server),
+            into_nullable(bio),
+        )
+    }
+}
+
 #[async_trait]
 impl Players for Api {
     async fn get_player_by_id(
@@ -45,26 +69,35 @@ impl Players for Api {
         path_params: GetPlayerByIdPathParams,
     ) -> Result<GetPlayerByIdResponse, String> {
         let api_key = current_api_key()?;
-        if !api_key.has_scope(&ApiKeyScope::PlayersColonRead) {
+        if !can_read_players(&api_key) {
             return Ok(
                 GetPlayerByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
 
-        let record = fetch_player(&self.pool, path_params.player_id).await?;
+        let record = sqlx::query_as::<_, PlayerRecord>(
+            r#"
+            SELECT id, discord_id, status, current_server, bio
+            FROM players
+            WHERE id = ?
+            "#,
+        )
+        .bind(path_params.player_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(log_database_error)?;
+
         let Some(record) = record else {
             return Ok(GetPlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
-        let Some(username) = resolve_username(&self.mojang, record.id).await? else {
+        let Some(username) = self.player_db.get_username_by_uuid(record.id).await? else {
             return Ok(GetPlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
         Ok(
-            GetPlayerByIdResponse::Status200_ThePlayerWasRetrievedSuccessfully(player_from_record(
-                record,
-                username,
-                can_read_discord_id(&api_key),
-            )),
+            GetPlayerByIdResponse::Status200_ThePlayerWasRetrievedSuccessfully(
+                record.into_list_item(username, can_read_discord_id(&api_key)),
+            ),
         )
     }
 
@@ -76,7 +109,7 @@ impl Players for Api {
         query_params: ListPlayersQueryParams,
     ) -> Result<ListPlayersResponse, String> {
         let api_key = current_api_key()?;
-        if !api_key.has_scope(&ApiKeyScope::PlayersColonRead) {
+        if !can_read_players(&api_key) {
             return Ok(ListPlayersResponse::Status403_TheAPIKeyLacksTheRequiredScope);
         }
 
@@ -160,7 +193,36 @@ impl Players for Api {
             None
         };
 
-        let items = resolve_players(&self.mojang, rows, can_read_discord_id).await?;
+        let mut tasks = JoinSet::new();
+        let mut items = std::iter::repeat_with(|| None)
+            .take(rows.len())
+            .collect::<Vec<_>>();
+        for (index, record) in rows.into_iter().enumerate() {
+            let player_db = self.player_db.clone();
+            tasks.spawn(async move {
+                let username = player_db.get_username_by_uuid(record.id).await?;
+                Ok::<_, PlayerDbError>((index, record, username))
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            let (index, record, username) = result
+                .map_err(|error| format!("PlayerDB lookup task failed: {error}"))?
+                .map_err(|error| {
+                    tracing::error!(%error, "PlayerDB profile lookup failed");
+                    error.to_string()
+                })?;
+            let username = username.ok_or_else(|| {
+                format!(
+                    "PlayerDB profile was not found for tracked player {}",
+                    record.id
+                )
+            })?;
+            items[index] = Some(record.into_list_item(username, can_read_discord_id));
+        }
+        let items = items
+            .into_iter()
+            .map(|player| player.expect("every PlayerDB lookup task must produce a player"))
+            .collect();
 
         Ok(
             ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
@@ -208,12 +270,15 @@ impl Players for Api {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
         }
 
-        /* let Some(username) = resolve_username(&self.mojang, path_params.player_id).await? else {
+        let Some(username) = self
+            .player_db
+            .get_username_by_uuid(path_params.player_id)
+            .await?
+        else {
             return Ok(
                 UpdatePlayerByIdResponse::Status404_NoMinecraftUserExistsWithTheSpecifiedPlayerID,
             );
-        }; */
-        let username = "now not available".to_string();
+        };
 
         let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
         sqlx::query("INSERT IGNORE INTO players (id) VALUES (?)")
@@ -241,6 +306,7 @@ impl Players for Api {
             updates.push("bio = ").push_bind_unseparated(bio);
         }
         query.push(" WHERE id = ").push_bind(path_params.player_id);
+
         query
             .build()
             .execute(&mut *transaction)
@@ -262,102 +328,19 @@ impl Players for Api {
 
         Ok(
             UpdatePlayerByIdResponse::Status200_ThePlayerWasUpdatedSuccessfully(
-                player_from_record(record, username, can_read_discord_id(&api_key)),
+                record.into_list_item(username, can_read_discord_id(&api_key)),
             ),
         )
     }
 }
 
-async fn fetch_player(
-    pool: &sqlx::MySqlPool,
-    player_id: Uuid,
-) -> Result<Option<PlayerRecord>, String> {
-    sqlx::query_as::<_, PlayerRecord>(
-        r#"
-        SELECT id, discord_id, status, current_server, bio
-        FROM players
-        WHERE id = ?
-        "#,
-    )
-    .bind(player_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(log_database_error)
+fn can_read_players(api_key: &ApiKey) -> bool {
+    api_key.has_scope(&ApiKeyScope::PlayersColonRead)
+        || api_key.has_scope(&ApiKeyScope::PlayersColonReadDetails)
 }
 
 fn can_read_discord_id(api_key: &ApiKey) -> bool {
     api_key.has_scope(&ApiKeyScope::PlayersColonReadDetails)
-}
-
-fn player_from_record(
-    record: PlayerRecord,
-    username: String,
-    can_read_discord_id: bool,
-) -> ListPlayers200ResponseItemsInner {
-    let PlayerRecord {
-        id,
-        discord_id,
-        status,
-        current_server,
-        bio,
-    } = record;
-
-    ListPlayers200ResponseItemsInner::new(
-        id,
-        into_nullable(can_read_discord_id.then_some(discord_id).flatten()),
-        username,
-        status,
-        into_nullable(current_server),
-        into_nullable(bio),
-    )
-}
-
-async fn resolve_players(
-    mojang: &MojangClient,
-    records: Vec<PlayerRecord>,
-    can_read_discord_id: bool,
-) -> Result<Vec<ListPlayers200ResponseItemsInner>, String> {
-    let mut tasks = JoinSet::new();
-    let mut players = std::iter::repeat_with(|| None)
-        .take(records.len())
-        .collect::<Vec<_>>();
-
-    for (index, record) in records.into_iter().enumerate() {
-        let mojang = mojang.clone();
-        tasks.spawn(async move {
-            let username = mojang.username(record.id).await?;
-            Ok::<_, MojangError>((index, record, username))
-        });
-    }
-
-    while let Some(result) = tasks.join_next().await {
-        let (index, record, username) = result
-            .map_err(|error| format!("Mojang profile lookup task failed: {error}"))?
-            .map_err(log_mojang_error)?;
-        let username = username.ok_or_else(|| {
-            format!(
-                "Mojang profile was not found for tracked player {}",
-                record.id
-            )
-        })?;
-        players[index] = Some(player_from_record(record, username, can_read_discord_id));
-    }
-
-    Ok(players
-        .into_iter()
-        .map(|player| player.expect("every Mojang lookup task must produce a player"))
-        .collect())
-}
-
-async fn resolve_username(
-    mojang: &MojangClient,
-    player_id: Uuid,
-) -> Result<Option<String>, String> {
-    mojang.username(player_id).await.map_err(log_mojang_error)
-}
-
-fn into_nullable<T>(value: Option<T>) -> Nullable<T> {
-    value.map_or(Nullable::Null, Nullable::Present)
 }
 
 fn log_database_error(error: sqlx::Error) -> String {
@@ -365,18 +348,14 @@ fn log_database_error(error: sqlx::Error) -> String {
     error.to_string()
 }
 
-fn log_mojang_error(error: MojangError) -> String {
-    tracing::error!(%error, "Mojang profile lookup failed");
-    error.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use graph_api::types::Nullable;
 
     #[test]
     fn player_conversion_hides_discord_id_without_details_scope() {
-        let player = player_from_record(player_record(), "Steve".to_string(), false);
+        let player = player_record().into_list_item("Steve".to_string(), false);
 
         assert_eq!(player.discord_id, Nullable::Null);
         assert_eq!(
@@ -387,7 +366,7 @@ mod tests {
 
     #[test]
     fn player_conversion_includes_discord_id_with_details_scope() {
-        let player = player_from_record(player_record(), "Steve".to_string(), true);
+        let player = player_record().into_list_item("Steve".to_string(), true);
 
         assert_eq!(
             player.discord_id,

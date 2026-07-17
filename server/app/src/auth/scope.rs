@@ -10,14 +10,10 @@ impl ApiKeyScopeExt for ApiKey {
     fn has_scope(&self, scope: &ApiKeyScope) -> bool {
         let star = ApiKeyScope::Star.to_string();
         let scope = scope.to_string();
-        let player_details = ApiKeyScope::PlayersColonReadDetails.to_string();
 
-        self.scopes.iter().any(|granted| {
-            granted == &star
-                || granted == &scope
-                || (scope == ApiKeyScope::PlayersColonRead.to_string()
-                    && granted == &player_details)
-        })
+        self.scopes
+            .iter()
+            .any(|granted| granted == &star || granted == &scope)
     }
 
     fn has_all_scopes(&self, scopes: &[ApiKeyScope]) -> bool {
@@ -49,12 +45,11 @@ mod tests {
     }
 
     #[test]
-    fn player_details_grants_basic_player_read_access() {
-        let api_key = api_key_with_scopes(&[ApiKeyScope::PlayersColonReadDetails]);
+    fn scopes_do_not_imply_other_scopes() {
+        let details = api_key_with_scopes(&[ApiKeyScope::PlayersColonReadDetails]);
 
-        assert!(api_key.has_scope(&ApiKeyScope::PlayersColonRead));
-        assert!(api_key.has_scope(&ApiKeyScope::PlayersColonReadDetails));
-        assert!(!api_key.has_scope(&ApiKeyScope::PlayersColonWrite));
+        assert!(details.has_scope(&ApiKeyScope::PlayersColonReadDetails));
+        assert!(!details.has_scope(&ApiKeyScope::PlayersColonRead));
     }
 
     fn api_key_with_scopes(scopes: &[ApiKeyScope]) -> ApiKey {
