@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod mojang;
 mod pagination;
 
 use api::{Api, ImageStorage};
@@ -7,6 +8,7 @@ use auth::middleware::ApiKeyAuthLayer;
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client as S3Client, config::Region};
+use mojang::MojangClient;
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
@@ -31,7 +33,8 @@ async fn main() {
         .expect("failed to run database migrations");
 
     let image_storage = build_image_storage().await;
-    let api = Api::new(pool, image_storage);
+    let mojang = MojangClient::new().expect("failed to create Mojang API client");
+    let api = Api::new(pool, image_storage, mojang);
     if let Some(bootstrap_api_key) = non_empty_env("GRAPH_BOOTSTRAP_API_KEY") {
         api.provision_bootstrap_api_key(&bootstrap_api_key)
             .await

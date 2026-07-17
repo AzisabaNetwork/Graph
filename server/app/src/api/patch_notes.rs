@@ -35,6 +35,7 @@ struct PatchNoteRecord {
     category: String,
     title: String,
     body: String,
+    author_id: Option<Uuid>,
     created_at: DateTime<Utc>,
 }
 
@@ -49,14 +50,16 @@ impl PatchNotes for Api {
     ) -> Result<CreatePatchNoteResponse, String> {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
-            return Ok(CreatePatchNoteResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
+            return Ok(
+                CreatePatchNoteResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
         }
 
         let (request, image_content_types) = match parse_create_patch_note_multipart(body).await {
             Ok(request) => request,
             Err(error) => {
                 tracing::error!(%error, "invalid create patch note multipart body");
-                return Ok(CreatePatchNoteResponse::Status400_InvalidRequestBody);
+                return Ok(CreatePatchNoteResponse::Status400_TheRequestBodyIsInvalid);
             }
         };
 
@@ -67,8 +70,13 @@ impl PatchNotes for Api {
             category,
             title,
             body,
+            author_id,
             images,
         } = request;
+        let author_id = author_id.and_then(|author_id| match author_id {
+            Nullable::Present(author_id) => Some(author_id),
+            Nullable::Null => None,
+        });
         let images = images.unwrap_or_default();
 
         let mut stored_images = Vec::with_capacity(images.len());
@@ -118,8 +126,8 @@ impl PatchNotes for Api {
 
         sqlx::query(
             r#"
-            INSERT INTO patch_notes (id, target, category, title, body, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO patch_notes (id, target, category, title, body, author_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id)
@@ -127,6 +135,7 @@ impl PatchNotes for Api {
         .bind(&category)
         .bind(&title)
         .bind(&body)
+        .bind(author_id)
         .bind(created_at)
         .execute(&mut *transaction)
         .await
@@ -164,9 +173,16 @@ impl PatchNotes for Api {
         })?;
 
         Ok(
-            CreatePatchNoteResponse::Status201_PatchNoteCreatedSuccessfully(
+            CreatePatchNoteResponse::Status201_ThePatchNoteWasCreatedSuccessfully(
                 ListPatchNotes200ResponseItemsInner::new(
-                    id, target, category, title, body, image_urls, created_at,
+                    id,
+                    target,
+                    category,
+                    title,
+                    body,
+                    into_nullable(author_id),
+                    image_urls,
+                    created_at,
                 ),
             ),
         )
@@ -181,7 +197,9 @@ impl PatchNotes for Api {
     ) -> Result<DeletePatchNoteByIdResponse, String> {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
-            return Ok(DeletePatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
+            return Ok(
+                DeletePatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
         }
 
         let result = sqlx::query("DELETE FROM patch_notes WHERE id = ?")
@@ -194,10 +212,10 @@ impl PatchNotes for Api {
             })?;
 
         if result.rows_affected() == 0 {
-            return Ok(DeletePatchNoteByIdResponse::Status404_PatchNoteNotFound);
+            return Ok(DeletePatchNoteByIdResponse::Status404_ThePatchNoteWasNotFound);
         }
 
-        Ok(DeletePatchNoteByIdResponse::Status204_PatchNoteDeletedSuccessfully)
+        Ok(DeletePatchNoteByIdResponse::Status204_ThePatchNoteWasDeletedSuccessfully)
     }
 
     async fn get_patch_note_by_id(
@@ -209,12 +227,14 @@ impl PatchNotes for Api {
     ) -> Result<GetPatchNoteByIdResponse, String> {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
-            return Ok(GetPatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope);
+            return Ok(
+                GetPatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
         }
 
         let patch_note = sqlx::query_as::<_, PatchNoteRecord>(
             r#"
-            SELECT id, target, category, title, body, created_at
+            SELECT id, target, category, title, body, author_id, created_at
             FROM patch_notes
             WHERE id = ?
             "#,
@@ -228,13 +248,13 @@ impl PatchNotes for Api {
         })?;
 
         let Some(record) = patch_note else {
-            return Ok(GetPatchNoteByIdResponse::Status404_PatchNoteNotFound);
+            return Ok(GetPatchNoteByIdResponse::Status404_ThePatchNoteWasNotFound);
         };
         let image_urls = self.load_patch_note_image_urls(&[record.id]).await?;
         let image_urls = image_urls.get(&record.id).cloned().unwrap_or_default();
 
         Ok(
-            GetPatchNoteByIdResponse::Status200_PatchNoteRetrievedSuccessfully(
+            GetPatchNoteByIdResponse::Status200_ThePatchNoteWasRetrievedSuccessfully(
                 patch_note_from_record(record, image_urls),
             ),
         )
@@ -250,7 +270,7 @@ impl PatchNotes for Api {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
             return Ok(
-                ListPatchNotesResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
+                ListPatchNotesResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
 
@@ -259,33 +279,42 @@ impl PatchNotes for Api {
             .unwrap_or(DEFAULT_PATCH_NOTES_LIMIT)
             .clamp(1, MAX_PATCH_NOTES_LIMIT) as usize;
 
-        let target = match query_params.target.as_deref() {
-            Some(target) => match PatchNoteTarget::from_str(target) {
-                Ok(target) => Some(target.to_string()),
-                Err(_) => return Ok(ListPatchNotesResponse::Status400_InvalidQueryParameters),
-            },
-            None => None,
-        };
+        let target =
+            match query_params.target.as_deref() {
+                Some(target) => match PatchNoteTarget::from_str(target) {
+                    Ok(target) => Some(target.to_string()),
+                    Err(_) => return Ok(
+                        ListPatchNotesResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                    ),
+                },
+                None => None,
+            };
 
-        let category = match query_params.category.as_deref() {
-            Some(category) => match PatchNoteCategory::from_str(category) {
-                Ok(category) => Some(category.to_string()),
-                Err(_) => return Ok(ListPatchNotesResponse::Status400_InvalidQueryParameters),
-            },
-            None => None,
-        };
+        let category =
+            match query_params.category.as_deref() {
+                Some(category) => match PatchNoteCategory::from_str(category) {
+                    Ok(category) => Some(category.to_string()),
+                    Err(_) => return Ok(
+                        ListPatchNotesResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                    ),
+                },
+                None => None,
+            };
 
-        let cursor = match query_params.cursor.as_deref() {
-            Some(cursor) => match PatchNoteCursor::decode(cursor) {
-                Ok(cursor) => Some(cursor),
-                Err(_) => return Ok(ListPatchNotesResponse::Status400_InvalidQueryParameters),
-            },
-            None => None,
-        };
+        let cursor =
+            match query_params.cursor.as_deref() {
+                Some(cursor) => match PatchNoteCursor::decode(cursor) {
+                    Ok(cursor) => Some(cursor),
+                    Err(_) => return Ok(
+                        ListPatchNotesResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                    ),
+                },
+                None => None,
+            };
 
         let mut query = QueryBuilder::<MySql>::new(
             r#"
-            SELECT id, target, category, title, body, created_at
+            SELECT id, target, category, title, body, author_id, created_at
             FROM patch_notes
             WHERE 1 = 1
             "#,
@@ -354,7 +383,7 @@ impl PatchNotes for Api {
         let next_cursor = next_cursor.map_or(Nullable::Null, Nullable::Present);
         let response = ListPatchNotes200Response::new(items, next_cursor);
 
-        Ok(ListPatchNotesResponse::Status200_PatchNotesRetrievedSuccessfully(response))
+        Ok(ListPatchNotesResponse::Status200_ThePatchNotesWereRetrievedSuccessfully(response))
     }
 }
 
@@ -406,6 +435,7 @@ async fn parse_create_patch_note_multipart(
     let mut category = None;
     let mut title = None;
     let mut body = None;
+    let mut author_id = None;
     let mut images = Vec::new();
     let mut image_content_types = Vec::new();
 
@@ -429,6 +459,7 @@ async fn parse_create_patch_note_multipart(
             "category" => category = Some(read_text(field, "category").await?),
             "title" => title = Some(read_text(field, "title").await?),
             "body" => body = Some(read_text(field, "body").await?),
+            "authorId" => author_id = Some(read_text(field, "authorId").await?),
             "images" => {
                 let content_type = field
                     .content_type()
@@ -474,6 +505,13 @@ async fn parse_create_patch_note_multipart(
     if body.trim().is_empty() {
         return Err("field `body` must not be empty".to_string());
     }
+    let author_id = author_id
+        .map(|author_id| {
+            Uuid::parse_str(&author_id)
+                .map(Nullable::Present)
+                .map_err(|error| format!("invalid field `authorId`: {error}"))
+        })
+        .transpose()?;
 
     Ok((
         CreatePatchNoteRequest {
@@ -481,6 +519,7 @@ async fn parse_create_patch_note_multipart(
             category,
             title,
             body,
+            author_id,
             images: (!images.is_empty()).then_some(images),
         },
         image_content_types,
@@ -514,10 +553,22 @@ fn patch_note_from_record(
         category,
         title,
         body,
+        author_id,
         created_at,
     } = record;
 
     ListPatchNotes200ResponseItemsInner::new(
-        id, target, category, title, body, image_urls, created_at,
+        id,
+        target,
+        category,
+        title,
+        body,
+        into_nullable(author_id),
+        image_urls,
+        created_at,
     )
+}
+
+fn into_nullable<T>(value: Option<T>) -> Nullable<T> {
+    value.map_or(Nullable::Null, Nullable::Present)
 }

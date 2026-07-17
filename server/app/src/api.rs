@@ -1,6 +1,8 @@
 mod api_keys;
 mod patch_notes;
+pub mod players;
 
+use crate::mojang::MojangClient;
 use aws_sdk_s3::Client as S3Client;
 use sqlx::MySqlPool;
 
@@ -8,6 +10,7 @@ use sqlx::MySqlPool;
 pub(crate) struct Api {
     pool: MySqlPool,
     image_storage: Option<ImageStorage>,
+    mojang: MojangClient,
 }
 
 #[derive(Clone, Debug)]
@@ -18,10 +21,15 @@ pub(crate) struct ImageStorage {
 }
 
 impl Api {
-    pub(crate) fn new(pool: MySqlPool, image_storage: Option<ImageStorage>) -> Self {
+    pub(crate) fn new(
+        pool: MySqlPool,
+        image_storage: Option<ImageStorage>,
+        mojang: MojangClient,
+    ) -> Self {
         Self {
             pool,
             image_storage,
+            mojang,
         }
     }
 

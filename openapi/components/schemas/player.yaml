@@ -5,8 +5,8 @@ required:
   - discordId
   - username
   - status
-  - bio
   - currentServer
+  - bio
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/PlayerId"
@@ -34,6 +34,4 @@ properties:
     type:
       - string
       - "null"
-    minLength: 1
-    maxLength: 160
-    description: The player's biography, or `null` if it is not set.
+    description: The player's biography of up to 160 characters, or `null` if it is not set.

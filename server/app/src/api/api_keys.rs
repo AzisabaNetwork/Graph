@@ -45,23 +45,19 @@ impl ApiKeys for Api {
     ) -> Result<CreateApiKeyResponse, String> {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
-            return Ok(
-                CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
-            );
+            return Ok(CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
 
         if !(1..=100).contains(&body.name.chars().count()) {
-            return Ok(CreateApiKeyResponse::Status400_InvalidRequestBody);
+            return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid);
         }
 
         let requested_scopes = match parse_api_key_scopes(&body.scopes) {
             Some(scopes) => scopes,
-            None => return Ok(CreateApiKeyResponse::Status400_InvalidRequestBody),
+            None => return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid),
         };
         if !api_key.has_all_scopes(&requested_scopes) {
-            return Ok(
-                CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
-            );
+            return Ok(CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
 
         let created_at = Utc::now();
@@ -69,7 +65,7 @@ impl ApiKeys for Api {
             .expires_at
             .is_some_and(|expires_at| expires_at <= created_at)
         {
-            return Ok(CreateApiKeyResponse::Status400_InvalidRequestBody);
+            return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid);
         }
 
         let credentials = ApiKeyCredentials::generate().map_err(|error| {
@@ -113,16 +109,18 @@ impl ApiKeys for Api {
 
         transaction.commit().await.map_err(log_database_error)?;
 
-        Ok(CreateApiKeyResponse::Status201_APIKeyCreatedSuccessfully(
-            CreateApiKey201Response::new(
-                body.name,
-                public_id,
-                scopes,
-                created_at,
-                into_nullable(body.expires_at),
-                token,
+        Ok(
+            CreateApiKeyResponse::Status201_TheAPIKeyWasCreatedSuccessfully(
+                CreateApiKey201Response::new(
+                    body.name,
+                    public_id,
+                    scopes,
+                    created_at,
+                    into_nullable(body.expires_at),
+                    token,
+                ),
             ),
-        ))
+        )
     }
 
     async fn delete_api_key_by_id(
@@ -135,15 +133,15 @@ impl ApiKeys for Api {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
             return Ok(
-                DeleteApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
+                DeleteApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
 
         if !self.delete_api_key_tree(&path_params.api_key_id).await? {
-            return Ok(DeleteApiKeyByIdResponse::Status404_APIKeyNotFound);
+            return Ok(DeleteApiKeyByIdResponse::Status404_TheAPIKeyWasNotFound);
         }
 
-        Ok(DeleteApiKeyByIdResponse::Status204_APIKeyDeletedSuccessfully)
+        Ok(DeleteApiKeyByIdResponse::Status204_TheAPIKeyWasDeletedSuccessfully)
     }
 
     async fn get_api_key_by_id(
@@ -156,7 +154,7 @@ impl ApiKeys for Api {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonRead) {
             return Ok(
-                GetApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
+                GetApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
 
@@ -173,16 +171,16 @@ impl ApiKeys for Api {
         .map_err(log_database_error)?;
 
         let Some(record) = record else {
-            return Ok(GetApiKeyByIdResponse::Status404_APIKeyNotFound);
+            return Ok(GetApiKeyByIdResponse::Status404_TheAPIKeyWasNotFound);
         };
         let scopes = self
             .load_api_key_scopes(std::slice::from_ref(&path_params.api_key_id))
             .await?;
 
         Ok(
-            GetApiKeyByIdResponse::Status200_APIKeyRetrievedSuccessfully(api_key_from_record(
-                record, &scopes,
-            )),
+            GetApiKeyByIdResponse::Status200_TheAPIKeyWasRetrievedSuccessfully(
+                api_key_from_record(record, &scopes),
+            ),
         )
     }
 
@@ -195,20 +193,22 @@ impl ApiKeys for Api {
     ) -> Result<ListApiKeysResponse, String> {
         let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonRead) {
-            return Ok(
-                ListApiKeysResponse::Status403_TheAuthenticatedAPIKeyDoesNotHaveTheRequiredScope,
-            );
+            return Ok(ListApiKeysResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
 
         let limit = query_params.limit.unwrap_or(DEFAULT_API_KEYS_LIMIT);
         if !(1..=MAX_API_KEYS_LIMIT).contains(&limit) {
-            return Ok(ListApiKeysResponse::Status400_InvalidQueryParameters);
+            return Ok(ListApiKeysResponse::Status400_TheRequestContainsInvalidQueryParameters);
         }
         let limit = limit as usize;
         let cursor = match query_params.cursor.as_deref() {
             Some(cursor) => match ApiKeyCursor::decode(cursor) {
                 Ok(cursor) => Some(cursor),
-                Err(_) => return Ok(ListApiKeysResponse::Status400_InvalidQueryParameters),
+                Err(_) => {
+                    return Ok(
+                        ListApiKeysResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                    );
+                }
             },
             None => None,
         };
@@ -264,9 +264,11 @@ impl ApiKeys for Api {
             .map(|record| api_key_from_record(record, &scopes))
             .collect();
 
-        Ok(ListApiKeysResponse::Status200_APIKeysRetrievedSuccessfully(
-            ListApiKeys200Response::new(items, into_nullable(next_cursor)),
-        ))
+        Ok(
+            ListApiKeysResponse::Status200_TheAPIKeysWereRetrievedSuccessfully(
+                ListApiKeys200Response::new(items, into_nullable(next_cursor)),
+            ),
+        )
     }
 }
 
