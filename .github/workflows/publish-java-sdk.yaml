@@ -39,7 +39,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-          cache: maven
           server-id: azisaba
           server-username: REPO_USERNAME
           server-password: REPO_PASSWORD
