@@ -1,0 +1,37 @@
+type: object
+required:
+  - id
+  - discordId
+  - username
+  - status
+  - bio
+  - currentServer
+properties:
+  id:
+    $ref: "../../openapi.yaml#/components/schemas/PlayerId"
+
+  discordId:
+    type:
+      - string
+      - "null"
+    description: The Discord user ID linked to the player, or `null` if no Discord account is linked.
+
+  username:
+    type: string
+
+  status:
+    $ref: "../../openapi.yaml#/components/schemas/PlayerStatus"
+
+  currentServer:
+    type:
+      - string
+      - "null"
+    description: The server to which the player is currently connected, or `null` if the player is offline.
+
+  bio:
+    type:
+      - string
+      - "null"
+    minLength: 1
+    maxLength: 160
+    description: The player's biography, or `null` if it is not set.

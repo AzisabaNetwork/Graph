@@ -35,6 +35,8 @@ components:
       $ref: "./components/parameters/api-key-id.yaml"
     PatchNoteId:
       $ref: "./components/parameters/patch-note-id.yaml"
+    PlayerId:
+      $ref: "./components/parameters/player-id.yaml"
 
   responses:
     Unauthorized:
@@ -65,6 +67,12 @@ components:
       $ref: "./components/schemas/patch-note-id.yaml"
     PatchNoteTarget:
       $ref: "./components/schemas/patch-note-target.yaml"
+    Player:
+      $ref: "./components/schemas/player.yaml"
+    PlayerId:
+      $ref: "./components/schemas/player-id.yaml"
+    PlayerStatus:
+      $ref: "./components/schemas/player-status.yaml"
 
   securitySchemes:
     ApiKeyAuth:

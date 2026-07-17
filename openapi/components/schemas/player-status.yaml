@@ -1,0 +1,5 @@
+type: string
+description: The player's online status.
+enum:
+  - online
+  - offline
