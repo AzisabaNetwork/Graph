@@ -1,4 +1,4 @@
-use crate::api::Api;
+use crate::api::{Api, into_nullable};
 use crate::auth::context::current_api_key;
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
@@ -37,6 +37,31 @@ struct PatchNoteRecord {
     body: String,
     author_id: Option<Uuid>,
     created_at: DateTime<Utc>,
+}
+
+impl PatchNoteRecord {
+    fn into_list_item(self, image_urls: Vec<String>) -> ListPatchNotes200ResponseItemsInner {
+        let PatchNoteRecord {
+            id,
+            target,
+            category,
+            title,
+            body,
+            author_id,
+            created_at,
+        } = self;
+
+        ListPatchNotes200ResponseItemsInner::new(
+            id,
+            target,
+            category,
+            title,
+            body,
+            into_nullable(author_id),
+            image_urls,
+            created_at,
+        )
+    }
 }
 
 #[async_trait]
@@ -81,9 +106,9 @@ impl PatchNotes for Api {
 
         let mut stored_images = Vec::with_capacity(images.len());
         if !images.is_empty() {
-            let Some(storage) = &self.image_storage else {
-                tracing::error!("R2 image storage is not configured");
-                return Err("R2 image storage is not configured".to_string());
+            let Some(storage) = &self.object_storage else {
+                tracing::error!("R2 object storage is not configured");
+                return Err("R2 object storage is not configured".to_string());
             };
 
             for (position, (ByteArray(bytes), content_type)) in
@@ -202,6 +227,46 @@ impl PatchNotes for Api {
             );
         }
 
+        let object_keys = sqlx::query_scalar::<_, String>(
+            "SELECT object_key FROM patch_note_images WHERE patch_note_id = ? ORDER BY position",
+        )
+        .bind(path_params.patch_note_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "failed to load patch note image object keys");
+            error.to_string()
+        })?;
+
+        if !object_keys.is_empty() {
+            let Some(storage) = &self.object_storage else {
+                tracing::error!(
+                    patch_note_id = %path_params.patch_note_id,
+                    "R2 object storage is not configured"
+                );
+                return Err("R2 object storage is not configured".to_string());
+            };
+
+            for object_key in object_keys {
+                storage
+                    .client
+                    .delete_object()
+                    .bucket(&storage.bucket)
+                    .key(&object_key)
+                    .send()
+                    .await
+                    .map_err(|error| {
+                        tracing::error!(
+                            ?error,
+                            %object_key,
+                            patch_note_id = %path_params.patch_note_id,
+                            "failed to delete patch note image"
+                        );
+                        error.to_string()
+                    })?;
+            }
+        }
+
         let result = sqlx::query("DELETE FROM patch_notes WHERE id = ?")
             .bind(path_params.patch_note_id)
             .execute(&self.pool)
@@ -255,7 +320,7 @@ impl PatchNotes for Api {
 
         Ok(
             GetPatchNoteByIdResponse::Status200_ThePatchNoteWasRetrievedSuccessfully(
-                patch_note_from_record(record, image_urls),
+                record.into_list_item(image_urls),
             ),
         )
     }
@@ -376,7 +441,7 @@ impl PatchNotes for Api {
             .into_iter()
             .map(|record| {
                 let record_image_urls = image_urls.get(&record.id).cloned().unwrap_or_default();
-                patch_note_from_record(record, record_image_urls)
+                record.into_list_item(record_image_urls)
             })
             .collect::<Vec<_>>();
 
@@ -541,34 +606,4 @@ fn image_extension(content_type: &str) -> &'static str {
         "image/webp" => ".webp",
         _ => "",
     }
-}
-
-fn patch_note_from_record(
-    record: PatchNoteRecord,
-    image_urls: Vec<String>,
-) -> ListPatchNotes200ResponseItemsInner {
-    let PatchNoteRecord {
-        id,
-        target,
-        category,
-        title,
-        body,
-        author_id,
-        created_at,
-    } = record;
-
-    ListPatchNotes200ResponseItemsInner::new(
-        id,
-        target,
-        category,
-        title,
-        body,
-        into_nullable(author_id),
-        image_urls,
-        created_at,
-    )
-}
-
-fn into_nullable<T>(value: Option<T>) -> Nullable<T> {
-    value.map_or(Nullable::Null, Nullable::Present)
 }

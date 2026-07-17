@@ -1,4 +1,4 @@
-use crate::api::Api;
+use crate::api::{Api, into_nullable};
 use crate::auth::context::current_api_key;
 use crate::auth::credentials::ApiKeyCredentials;
 use crate::auth::scope::ApiKeyScopeExt;
@@ -16,7 +16,6 @@ use graph_api::models::{
     GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeys200ResponseItemsInner,
     ListApiKeysQueryParams,
 };
-use graph_api::types::Nullable;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
@@ -32,6 +31,30 @@ struct ApiKeyRecord {
     name: String,
     created_at: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
+}
+
+impl ApiKeyRecord {
+    fn into_list_item(
+        self,
+        scopes: &BTreeMap<String, Vec<String>>,
+    ) -> ListApiKeys200ResponseItemsInner {
+        let ApiKeyRecord {
+            public_id,
+            name,
+            created_at,
+            expires_at,
+        } = self;
+
+        let item_scopes = scopes.get(&public_id).cloned().unwrap_or_default();
+
+        ListApiKeys200ResponseItemsInner::new(
+            name,
+            public_id,
+            item_scopes,
+            created_at,
+            into_nullable(expires_at),
+        )
+    }
 }
 
 #[async_trait]
@@ -179,7 +202,7 @@ impl ApiKeys for Api {
 
         Ok(
             GetApiKeyByIdResponse::Status200_TheAPIKeyWasRetrievedSuccessfully(
-                api_key_from_record(record, &scopes),
+                record.into_list_item(&scopes),
             ),
         )
     }
@@ -261,7 +284,7 @@ impl ApiKeys for Api {
         let scopes = self.load_api_key_scopes(&public_ids).await?;
         let items = rows
             .into_iter()
-            .map(|record| api_key_from_record(record, &scopes))
+            .map(|record| record.into_list_item(&scopes))
             .collect();
 
         Ok(
@@ -273,6 +296,46 @@ impl ApiKeys for Api {
 }
 
 impl Api {
+    pub(crate) async fn provision_bootstrap_api_key(&self, token: &str) -> Result<(), String> {
+        let credentials = token
+            .parse::<ApiKeyCredentials>()
+            .map_err(|error| format!("GRAPH_BOOTSTRAP_API_KEY is invalid: {error}"))?;
+        let secret_digest = credentials.secret_digest();
+
+        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        sqlx::query(
+            r#"
+            INSERT INTO api_keys
+                (public_id, created_by_public_id, name, secret_digest, created_at, expires_at)
+            VALUES (?, NULL, 'Bootstrap administrator', ?, UTC_TIMESTAMP(6), NULL)
+            ON DUPLICATE KEY UPDATE
+                created_by_public_id = NULL,
+                name = VALUES(name),
+                secret_digest = VALUES(secret_digest),
+                expires_at = NULL
+            "#,
+        )
+        .bind(credentials.public_id())
+        .bind(secret_digest.as_slice())
+        .execute(&mut *transaction)
+        .await
+        .map_err(log_database_error)?;
+
+        sqlx::query("DELETE FROM api_key_scopes WHERE api_key_public_id = ?")
+            .bind(credentials.public_id())
+            .execute(&mut *transaction)
+            .await
+            .map_err(log_database_error)?;
+        sqlx::query("INSERT INTO api_key_scopes (api_key_public_id, scope) VALUES (?, ?)")
+            .bind(credentials.public_id())
+            .bind(ApiKeyScope::Star.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(log_database_error)?;
+
+        transaction.commit().await.map_err(log_database_error)
+    }
+
     async fn delete_api_key_tree(&self, root_public_id: &str) -> Result<bool, String> {
         let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
         let root = sqlx::query_scalar::<_, String>(
@@ -325,46 +388,6 @@ impl Api {
         Ok(true)
     }
 
-    pub(crate) async fn provision_bootstrap_api_key(&self, token: &str) -> Result<(), String> {
-        let credentials = token
-            .parse::<ApiKeyCredentials>()
-            .map_err(|error| format!("GRAPH_BOOTSTRAP_API_KEY is invalid: {error}"))?;
-        let secret_digest = credentials.secret_digest();
-
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
-        sqlx::query(
-            r#"
-            INSERT INTO api_keys
-                (public_id, created_by_public_id, name, secret_digest, created_at, expires_at)
-            VALUES (?, NULL, 'Bootstrap administrator', ?, UTC_TIMESTAMP(6), NULL)
-            ON DUPLICATE KEY UPDATE
-                created_by_public_id = NULL,
-                name = VALUES(name),
-                secret_digest = VALUES(secret_digest),
-                expires_at = NULL
-            "#,
-        )
-        .bind(credentials.public_id())
-        .bind(secret_digest.as_slice())
-        .execute(&mut *transaction)
-        .await
-        .map_err(log_database_error)?;
-
-        sqlx::query("DELETE FROM api_key_scopes WHERE api_key_public_id = ?")
-            .bind(credentials.public_id())
-            .execute(&mut *transaction)
-            .await
-            .map_err(log_database_error)?;
-        sqlx::query("INSERT INTO api_key_scopes (api_key_public_id, scope) VALUES (?, ?)")
-            .bind(credentials.public_id())
-            .bind(ApiKeyScope::Star.to_string())
-            .execute(&mut *transaction)
-            .await
-            .map_err(log_database_error)?;
-
-        transaction.commit().await.map_err(log_database_error)
-    }
-
     async fn load_api_key_scopes(
         &self,
         public_ids: &[String],
@@ -403,30 +426,6 @@ fn parse_api_key_scopes(scopes: &[String]) -> Option<Vec<ApiKeyScope>> {
         .ok()?;
     let unique = parsed.iter().copied().collect::<BTreeSet<_>>();
     (unique.len() == parsed.len()).then_some(parsed)
-}
-
-fn api_key_from_record(
-    record: ApiKeyRecord,
-    scopes: &BTreeMap<String, Vec<String>>,
-) -> ListApiKeys200ResponseItemsInner {
-    let ApiKeyRecord {
-        public_id,
-        name,
-        created_at,
-        expires_at,
-    } = record;
-    let item_scopes = scopes.get(&public_id).cloned().unwrap_or_default();
-    ListApiKeys200ResponseItemsInner::new(
-        name,
-        public_id,
-        item_scopes,
-        created_at,
-        into_nullable(expires_at),
-    )
-}
-
-fn into_nullable<T>(value: Option<T>) -> Nullable<T> {
-    value.map_or(Nullable::Null, Nullable::Present)
 }
 
 fn log_database_error(error: sqlx::Error) -> String {
