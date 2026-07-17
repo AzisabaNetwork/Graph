@@ -1,0 +1,17 @@
+type: object
+additionalProperties: false
+minProperties: 1
+properties:
+  discordId:
+    allOf:
+      - $ref: "./player.yaml#/properties/discordId"
+    description: The Discord user ID to link to the player, or `null` to remove the existing link.
+
+  status:
+    $ref: "./player.yaml#/properties/status"
+
+  currentServer:
+    $ref: "./player.yaml#/properties/currentServer"
+
+  bio:
+    $ref: "./player.yaml#/properties/bio"

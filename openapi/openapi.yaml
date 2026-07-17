@@ -18,6 +18,8 @@ tags:
     description: Operations related to API keys.
   - name: patch-notes
     description: Operations related to patch notes.
+  - name: players
+    description: Operations related to players.
 
 paths:
   /api-keys:
@@ -28,6 +30,10 @@ paths:
     $ref: "./paths/patch-notes/patch-notes.yaml"
   /patch-notes/{patchNoteId}:
     $ref: "./paths/patch-notes/patch-notes-by-id.yaml"
+  /players:
+    $ref: "./paths/players/players.yaml"
+  /players/{playerId}:
+    $ref: "./paths/players/players-by-id.yaml"
 
 components:
   parameters:
@@ -53,12 +59,14 @@ components:
       $ref: "./components/schemas/create-api-key-request.yaml"
     CreateApiKeyResponse:
       $ref: "./components/schemas/create-api-key-response.yaml"
-    ListApiKeysResponse:
-      $ref: "./components/schemas/list-api-key-response.yaml"
     CreatePatchNoteRequest:
       $ref: "./components/schemas/create-patch-note-request.yaml"
+    ListApiKeysResponse:
+      $ref: "./components/schemas/list-api-key-response.yaml"
     ListPatchNotesResponse:
       $ref: "./components/schemas/list-patch-notes-response.yaml"
+    ListPlayersResponse:
+      $ref: "./components/schemas/list-players-response.yaml"
     PatchNote:
       $ref: "./components/schemas/patch-note.yaml"
     PatchNoteCategory:
@@ -73,6 +81,8 @@ components:
       $ref: "./components/schemas/player-id.yaml"
     PlayerStatus:
       $ref: "./components/schemas/player-status.yaml"
+    UpdatePlayerRequest:
+      $ref: "./components/schemas/update-player-request.yaml"
 
   securitySchemes:
     ApiKeyAuth:

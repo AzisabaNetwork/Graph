@@ -15,12 +15,12 @@ get:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/PatchNote"
-    "404":
-      description: The patch note was not found.
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The patch note was not found.
 
 delete:
   summary: Delete a patch note by ID

@@ -1,0 +1,58 @@
+get:
+  summary: Get a player by ID
+  description: Returns a player. The `discordId` field is `null` unless the API key has the `players:read-details` scope.
+  operationId: getPlayerById
+  tags:
+    - players
+  security:
+    - ApiKeyAuth:
+        - players:read
+    - ApiKeyAuth:
+        - players:read-details
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+  responses:
+    "200":
+      description: The player was retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Player"
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The player was not found.
+
+patch:
+  summary: Update a player by ID
+  operationId: updatePlayerById
+  tags:
+    - players
+  security:
+    - ApiKeyAuth:
+        - players:write
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: "../../openapi.yaml#/components/schemas/UpdatePlayerRequest"
+  responses:
+    "200":
+      description: The player was updated successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Player"
+    "400":
+      description: The request body is invalid.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: No Minecraft user exists with the specified player ID.

@@ -1,4 +1,5 @@
 type: object
+description: A player profile. The Discord user ID is hidden unless the API key has permission to read it.
 required:
   - id
   - discordId
@@ -14,10 +15,11 @@ properties:
     type:
       - string
       - "null"
-    description: The Discord user ID linked to the player, or `null` if no Discord account is linked.
+    description: The Discord user ID linked to the player, or `null` if no Discord account is linked or the API key lacks the `players:read-details` scope.
 
   username:
     type: string
+    description: The player's Minecraft username.
 
   status:
     $ref: "../../openapi.yaml#/components/schemas/PlayerStatus"
