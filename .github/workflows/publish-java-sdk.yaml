@@ -1,0 +1,74 @@
+name: Publish Java SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (for example: 1.0.0 or 1.0.0-SNAPSHOT)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-java-sdk
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to repo.azisaba.net
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          server-id: azisaba
+          server-username: REPO_USERNAME
+          server-password: REPO_PASSWORD
+
+      - name: Install generator dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Java SDK
+        env:
+          VERSION: ${{ inputs.version }}
+        run: pnpm generate:java-sdk --additional-properties artifactVersion="$VERSION"
+
+      - name: Build Java SDK
+        working-directory: sdks/java/generated
+        run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: Publish Java SDK
+        env:
+          REPO_USERNAME: ${{ secrets.REPO_USERNAME }}
+          REPO_PASSWORD: ${{ secrets.REPO_PASSWORD }}
+          VERSION: ${{ inputs.version }}
+        working-directory: sdks/java/generated
+        run: |
+          if [[ "$VERSION" == *-SNAPSHOT ]]; then
+            repository_url="https://repo.azisaba.net/repository/maven-snapshots/"
+          else
+            repository_url="https://repo.azisaba.net/repository/maven-releases/"
+          fi
+
+          mvn --batch-mode --no-transfer-progress deploy \
+            -DskipTests \
+            -DaltDeploymentRepository="azisaba::$repository_url"

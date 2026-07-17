@@ -1,0 +1,26 @@
+generatorName: java
+inputSpec: "openapi/openapi.yaml"
+outputDir: "sdks/java/generated"
+additionalProperties:
+  groupId: "net.azisaba"
+  artifactId: "graph"
+  artifactVersion: "0.0.1-SNAPSHOT"
+  artifactUrl: "https://github.com/AzisabaNetwork/Graph"
+  invokerPackage: "net.azisaba.graph"
+  apiPackage: "net.azisaba.graph.api"
+  modelPackage: "net.azisaba.graph.model"
+  developerName: "Azisaba Network"
+  developerEmail: ""
+  developerOrganization: "Azisaba Network"
+  developerOrganizationUrl: "https://www.azisaba.net"
+  licenseName: "MIT License"
+  licenseUrl: "https://opensource.org/license/mit"
+  scmConnection: "scm:git:https://github.com/AzisabaNetwork/Graph.git"
+  scmDeveloperConnection: "scm:git:ssh://git@github.com/AzisabaNetwork/Graph.git"
+  scmUrl: "https://github.com/AzisabaNetwork/Graph"
+  library: "okhttp-gson"
+  dateLibrary: "java8"
+  useJakartaEe: true
+  hideGenerationTimestamp: true
+  useRuntimeException: true
+  serializationLibrary: "gson"
