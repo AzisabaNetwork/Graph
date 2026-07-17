@@ -5,6 +5,7 @@ required:
   - category
   - title
   - body
+  - authorId
   - imageUrls
   - createdAt
 properties:
@@ -24,6 +25,12 @@ properties:
   body:
     type: string
     description: The body text of the patch note.
+
+  authorId:
+    description: The ID of the author. Null when the author is not known.
+    anyOf:
+      - $ref: "../../openapi.yaml#/components/schemas/PlayerId"
+      - type: "null"
 
   imageUrls:
     type: array

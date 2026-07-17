@@ -17,6 +17,9 @@ properties:
   body:
     $ref: "./patch-note.yaml#/properties/body"
 
+  authorId:
+    $ref: "./patch-note.yaml#/properties/authorId"
+
   images:
     type: array
     description: The image files attached to the patch note.
