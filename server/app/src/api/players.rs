@@ -208,11 +208,12 @@ impl Players for Api {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
         }
 
-        let Some(username) = resolve_username(&self.mojang, path_params.player_id).await? else {
+        /* let Some(username) = resolve_username(&self.mojang, path_params.player_id).await? else {
             return Ok(
                 UpdatePlayerByIdResponse::Status404_NoMinecraftUserExistsWithTheSpecifiedPlayerID,
             );
-        };
+        }; */
+        let username = "now not available".to_string();
 
         let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
         sqlx::query("INSERT IGNORE INTO players (id) VALUES (?)")
