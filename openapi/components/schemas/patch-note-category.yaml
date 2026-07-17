@@ -1,5 +1,5 @@
 type: string
-description: Category of the patch note.
+description: The category of the patch note.
 enum:
   - balance
   - feature

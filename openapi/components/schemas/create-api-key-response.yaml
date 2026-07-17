@@ -7,5 +7,5 @@ allOf:
       apiKey:
         type: string
         description: |
-          The completed API key. This value is returned only once and
+          The generated API key. This value is returned only once and
           must be stored securely by the client.

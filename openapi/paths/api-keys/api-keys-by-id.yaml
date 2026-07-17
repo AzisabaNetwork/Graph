@@ -10,7 +10,7 @@ get:
     - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
   responses:
     "200":
-      description: API key retrieved successfully.
+      description: The API key was retrieved successfully.
       content:
         application/json:
           schema:
@@ -20,7 +20,7 @@ get:
     "403":
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
     "404":
-      description: API key not found.
+      description: The API key was not found.
 
 delete:
   summary: Delete an API key by ID
@@ -34,9 +34,9 @@ delete:
     - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
   responses:
     "204":
-      description: API key deleted successfully.
+      description: The API key was deleted successfully.
     "404":
-      description: API key not found.
+      description: The API key was not found.
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":

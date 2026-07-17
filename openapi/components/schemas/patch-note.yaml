@@ -19,15 +19,15 @@ properties:
 
   title:
     type: string
-    description: Title of the patch note.
+    description: The title of the patch note.
 
   body:
     type: string
-    description: Body text of the patch note.
+    description: The body text of the patch note.
 
   imageUrls:
     type: array
-    description: URLs of images attached to the patch note.
+    description: The URLs of images attached to the patch note.
     items:
       type: string
       format: uri
@@ -35,4 +35,4 @@ properties:
   createdAt:
     type: string
     format: date-time
-    description: Date and time when the patch note was created.
+    description: The date and time at which the patch note was created.

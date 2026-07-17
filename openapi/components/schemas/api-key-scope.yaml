@@ -1,5 +1,5 @@
 type: string
-description: Permission granted to an API key.
+description: A permission granted to an API key.
 enum:
   - "*"
   - api-keys:read

@@ -12,4 +12,4 @@ properties:
     type:
       - string
       - "null"
-    description: Cursor for retrieving the next page, or null if no more results are available.
+    description: The cursor for retrieving the next page, or `null` if no more results are available.

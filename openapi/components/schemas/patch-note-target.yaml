@@ -1,5 +1,5 @@
 type: string
-description: Target of the patch note.
+description: The target of the patch note.
 enum:
   - creativePro
   - frontier

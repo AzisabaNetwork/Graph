@@ -11,8 +11,8 @@ properties:
     allOf:
       - $ref: "./api-key.yaml#/properties/scopes"
     description: |
-      Scopes requested for the new API key. Every requested scope must be
-      authorized for delegation by the API key making this request.
+      The scopes requested for the new API key. The API key used to make the
+      request must be authorized to delegate each requested scope.
 
   expiresAt:
     $ref: "./api-key.yaml#/properties/expiresAt"

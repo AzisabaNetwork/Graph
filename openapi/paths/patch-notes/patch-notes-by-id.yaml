@@ -10,13 +10,13 @@ get:
     - $ref: "../../openapi.yaml#/components/parameters/PatchNoteId"
   responses:
     "200":
-      description: Patch note retrieved successfully.
+      description: The patch note was retrieved successfully.
       content:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/PatchNote"
     "404":
-      description: Patch note not found.
+      description: The patch note was not found.
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
@@ -34,10 +34,10 @@ delete:
     - $ref: "../../openapi.yaml#/components/parameters/PatchNoteId"
   responses:
     "204":
-      description: Patch note deleted successfully.
+      description: The patch note was deleted successfully.
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
     "404":
-      description: Patch note not found.
+      description: The patch note was not found.

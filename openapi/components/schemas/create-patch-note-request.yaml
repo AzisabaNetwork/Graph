@@ -19,7 +19,7 @@ properties:
 
   images:
     type: array
-    description: Image files attached to the patch note.
+    description: The image files attached to the patch note.
     items:
       type: string
       format: binary
