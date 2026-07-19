@@ -1,12 +1,12 @@
-generatorName: java
+generatorName: kotlin
 inputSpec: "openapi/openapi.yaml"
-outputDir: "sdks/java/generated"
+outputDir: "sdks/kotlin/generated"
 additionalProperties:
   groupId: "net.azisaba.graph"
-  artifactId: "java"
+  artifactId: "kotlin"
   artifactVersion: "0.0.1-SNAPSHOT"
   artifactUrl: "https://github.com/AzisabaNetwork/Graph"
-  invokerPackage: "net.azisaba.graph"
+  packageName: "net.azisaba.graph"
   apiPackage: "net.azisaba.graph.api"
   modelPackage: "net.azisaba.graph.model"
   developerName: "Azisaba Network"
@@ -18,9 +18,9 @@ additionalProperties:
   scmConnection: "scm:git:https://github.com/AzisabaNetwork/Graph.git"
   scmDeveloperConnection: "scm:git:ssh://git@github.com/AzisabaNetwork/Graph.git"
   scmUrl: "https://github.com/AzisabaNetwork/Graph"
-  library: "okhttp-gson"
+  library: "jvm-retrofit2"
+  serializationLibrary: "kotlinx_serialization"
+  useCoroutines: true
+  useResponseAsReturnType: true
   dateLibrary: "java8"
-  useJakartaEe: false
   hideGenerationTimestamp: true
-  useRuntimeException: true
-  serializationLibrary: "gson"
