@@ -3,7 +3,7 @@ inputSpec: "openapi/openapi.yaml"
 outputDir: "sdks/java/generated"
 additionalProperties:
   groupId: "net.azisaba.graph"
-  artifactId: "java"
+  artifactId: "java-client"
   artifactVersion: "0.0.1-SNAPSHOT"
   artifactUrl: "https://github.com/AzisabaNetwork/Graph"
   invokerPackage: "net.azisaba.graph"
@@ -18,9 +18,10 @@ additionalProperties:
   scmConnection: "scm:git:https://github.com/AzisabaNetwork/Graph.git"
   scmDeveloperConnection: "scm:git:ssh://git@github.com/AzisabaNetwork/Graph.git"
   scmUrl: "https://github.com/AzisabaNetwork/Graph"
-  library: "okhttp-gson"
+  library: "native"
+  asyncNative: true
+  supportUrlQuery: false
   dateLibrary: "java8"
   useJakartaEe: false
   hideGenerationTimestamp: true
-  useRuntimeException: true
-  serializationLibrary: "gson"
+  serializationLibrary: "jackson"

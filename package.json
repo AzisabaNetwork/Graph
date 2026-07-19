@@ -7,8 +7,7 @@
     "openapi:lint": "redocly lint openapi/openapi.yaml",
     "generate:server": "rimraf server/generated && openapi-generator-cli generate -c server/generator-config.yaml",
     "generate:ts-sdk": "rimraf sdks/typescript/generated && openapi-generator-cli generate -c sdks/typescript/config.yaml",
-    "generate:java-sdk": "rimraf sdks/java/generated && openapi-generator-cli generate -c sdks/java/config.yaml",
-    "generate:kotlin-sdk": "rimraf sdks/kotlin/generated && openapi-generator-cli generate -c sdks/kotlin/config.yaml"
+    "generate:java-sdk": "rimraf sdks/java/generated && openapi-generator-cli generate -c sdks/java/config.yaml"
   },
   "devDependencies": {
     "@openapitools/openapi-generator-cli": "^2.39.1",
