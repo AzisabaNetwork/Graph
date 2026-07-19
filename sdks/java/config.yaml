@@ -1,9 +1,11 @@
 generatorName: java
 inputSpec: "openapi/openapi.yaml"
 outputDir: "sdks/java/generated"
+library: "native"
+artifactId: "graph"
 additionalProperties:
   groupId: "net.azisaba.graph"
-  artifactId: "java-client"
+  artifactId: "graph"
   artifactVersion: "0.0.1-SNAPSHOT"
   artifactUrl: "https://github.com/AzisabaNetwork/Graph"
   invokerPackage: "net.azisaba.graph"
@@ -18,7 +20,6 @@ additionalProperties:
   scmConnection: "scm:git:https://github.com/AzisabaNetwork/Graph.git"
   scmDeveloperConnection: "scm:git:ssh://git@github.com/AzisabaNetwork/Graph.git"
   scmUrl: "https://github.com/AzisabaNetwork/Graph"
-  library: "native"
   asyncNative: true
   supportUrlQuery: false
   dateLibrary: "java8"

@@ -5,7 +5,6 @@ mod pagination;
 
 use crate::api::non_empty_env;
 use api::{Api, ObjectStorage};
-use auth::middleware::ApiKeyAuthLayer;
 use mojang::PlayerDbClient;
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
@@ -48,9 +47,7 @@ async fn main() {
         .parse()
         .expect("GRAPH_SERVER_ADDR must be a valid socket address");
 
-    let app = graph_api::server::new(Arc::new(api.clone()))
-        .layer(ApiKeyAuthLayer::new(api))
-        .layer(TraceLayer::new_for_http());
+    let app = graph_api::server::new(Arc::new(api)).layer(TraceLayer::new_for_http());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind server socket");

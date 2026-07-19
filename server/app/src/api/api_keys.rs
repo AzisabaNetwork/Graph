@@ -1,10 +1,8 @@
 use crate::api::{Api, into_nullable};
-use crate::auth::context::current_api_key;
 use crate::auth::credentials::ApiKeyCredentials;
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
-use axum::extract::Host;
 use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Utc};
 use graph_api::apis::api_keys::{
@@ -12,16 +10,17 @@ use graph_api::apis::api_keys::{
     ListApiKeysResponse,
 };
 use graph_api::models::{
-    ApiKeyScope, CreateApiKey201Response, CreateApiKeyRequest, DeleteApiKeyByIdPathParams,
+    ApiKey, ApiKeyScope, CreateApiKey201Response, CreateApiKeyRequest, DeleteApiKeyByIdPathParams,
     GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeys200ResponseItemsInner,
     ListApiKeysQueryParams,
 };
+use headers::Host;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 
-const DEFAULT_API_KEYS_LIMIT: i32 = 20;
-const MAX_API_KEYS_LIMIT: i32 = 100;
+const DEFAULT_API_KEYS_LIMIT: u8 = 20;
+const MAX_API_KEYS_LIMIT: u8 = 100;
 
 type ApiKeyCursor = Cursor<DateTime<Utc>, String>;
 
@@ -58,15 +57,17 @@ impl ApiKeyRecord {
 }
 
 #[async_trait]
-impl ApiKeys for Api {
+impl ApiKeys<String> for Api {
+    type Claims = ApiKey;
+
     async fn create_api_key(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        body: CreateApiKeyRequest,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        body: &CreateApiKeyRequest,
     ) -> Result<CreateApiKeyResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
             return Ok(CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
@@ -84,10 +85,14 @@ impl ApiKeys for Api {
         }
 
         let created_at = Utc::now();
-        if body
+        let expires_at = body
             .expires_at
-            .is_some_and(|expires_at| expires_at <= created_at)
-        {
+            .as_ref()
+            .and_then(|expires_at| match expires_at {
+                graph_api::types::Nullable::Present(expires_at) => Some(*expires_at),
+                graph_api::types::Nullable::Null => None,
+            });
+        if expires_at.is_some_and(|expires_at| expires_at <= created_at) {
             return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid);
         }
 
@@ -116,7 +121,7 @@ impl ApiKeys for Api {
         .bind(&body.name)
         .bind(secret_digest.as_slice())
         .bind(created_at)
-        .bind(body.expires_at)
+        .bind(expires_at)
         .execute(&mut *transaction)
         .await
         .map_err(log_database_error)?;
@@ -135,11 +140,11 @@ impl ApiKeys for Api {
         Ok(
             CreateApiKeyResponse::Status201_TheAPIKeyWasCreatedSuccessfully(
                 CreateApiKey201Response::new(
-                    body.name,
+                    body.name.clone(),
                     public_id,
                     scopes,
                     created_at,
-                    into_nullable(body.expires_at),
+                    into_nullable(expires_at),
                     token,
                 ),
             ),
@@ -148,12 +153,12 @@ impl ApiKeys for Api {
 
     async fn delete_api_key_by_id(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        path_params: DeleteApiKeyByIdPathParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &DeleteApiKeyByIdPathParams,
     ) -> Result<DeleteApiKeyByIdResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
             return Ok(
                 DeleteApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
@@ -169,12 +174,12 @@ impl ApiKeys for Api {
 
     async fn get_api_key_by_id(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        path_params: GetApiKeyByIdPathParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &GetApiKeyByIdPathParams,
     ) -> Result<GetApiKeyByIdResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonRead) {
             return Ok(
                 GetApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
@@ -209,12 +214,12 @@ impl ApiKeys for Api {
 
     async fn list_api_keys(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        query_params: ListApiKeysQueryParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        query_params: &ListApiKeysQueryParams,
     ) -> Result<ListApiKeysResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::ApiKeysColonRead) {
             return Ok(ListApiKeysResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }

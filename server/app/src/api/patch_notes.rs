@@ -1,30 +1,30 @@
 use crate::api::{Api, into_nullable};
-use crate::auth::context::current_api_key;
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
-use axum::extract::Host;
-use axum_extra::extract::multipart::Field;
-use axum_extra::extract::{CookieJar, Multipart};
+use axum::extract::Multipart;
+use axum::extract::multipart::Field;
+use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Utc};
 use graph_api::apis::patch_notes::{
     CreatePatchNoteResponse, DeletePatchNoteByIdResponse, GetPatchNoteByIdResponse,
     ListPatchNotesResponse, PatchNotes,
 };
 use graph_api::models::{
-    ApiKeyScope, CreatePatchNoteRequest, DeletePatchNoteByIdPathParams, GetPatchNoteByIdPathParams,
-    ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner, ListPatchNotesQueryParams,
-    PatchNoteCategory, PatchNoteTarget,
+    ApiKey, ApiKeyScope, CreatePatchNoteRequest, DeletePatchNoteByIdPathParams,
+    GetPatchNoteByIdPathParams, ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner,
+    ListPatchNotesQueryParams, PatchNoteCategory, PatchNoteTarget,
 };
 use graph_api::types::{ByteArray, Nullable};
+use headers::Host;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
 use std::{collections::HashMap, str::FromStr};
 use uuid::Uuid;
 
-const DEFAULT_PATCH_NOTES_LIMIT: i32 = 20;
-const MAX_PATCH_NOTES_LIMIT: i32 = 100;
+const DEFAULT_PATCH_NOTES_LIMIT: u8 = 20;
+const MAX_PATCH_NOTES_LIMIT: u8 = 100;
 
 type PatchNoteCursor = Cursor<DateTime<Utc>, Uuid>;
 
@@ -65,15 +65,17 @@ impl PatchNoteRecord {
 }
 
 #[async_trait]
-impl PatchNotes for Api {
+impl PatchNotes<String> for Api {
+    type Claims = ApiKey;
+
     async fn create_patch_note(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
         body: Multipart,
     ) -> Result<CreatePatchNoteResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
             return Ok(
                 CreatePatchNoteResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
@@ -215,12 +217,12 @@ impl PatchNotes for Api {
 
     async fn delete_patch_note_by_id(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        path_params: DeletePatchNoteByIdPathParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &DeletePatchNoteByIdPathParams,
     ) -> Result<DeletePatchNoteByIdResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonWrite) {
             return Ok(
                 DeletePatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
@@ -285,12 +287,12 @@ impl PatchNotes for Api {
 
     async fn get_patch_note_by_id(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        path_params: GetPatchNoteByIdPathParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &GetPatchNoteByIdPathParams,
     ) -> Result<GetPatchNoteByIdResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
             return Ok(
                 GetPatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
@@ -327,12 +329,12 @@ impl PatchNotes for Api {
 
     async fn list_patch_notes(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        query_params: ListPatchNotesQueryParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        query_params: &ListPatchNotesQueryParams,
     ) -> Result<ListPatchNotesResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
             return Ok(
                 ListPatchNotesResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,

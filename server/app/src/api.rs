@@ -112,3 +112,6 @@ pub(crate) fn non_empty_env(key: &str) -> Option<String> {
 pub(crate) fn into_nullable<T>(value: Option<T>) -> Nullable<T> {
     value.map_or(Nullable::Null, Nullable::Present)
 }
+
+#[async_trait::async_trait]
+impl graph_api::apis::ErrorHandler<String> for Api {}

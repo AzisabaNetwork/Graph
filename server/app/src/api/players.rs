@@ -1,10 +1,8 @@
 use crate::api::{Api, into_nullable};
-use crate::auth::context::current_api_key;
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::mojang::PlayerDbError;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
-use axum::extract::Host;
 use axum_extra::extract::CookieJar;
 use graph_api::apis::players::{
     GetPlayerByIdResponse, ListPlayersResponse, Players, UpdatePlayerByIdResponse,
@@ -14,14 +12,15 @@ use graph_api::models::{
     ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
     UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
 };
+use headers::Host;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
 use std::str::FromStr;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
-const DEFAULT_PLAYERS_LIMIT: i32 = 20;
-const MAX_PLAYERS_LIMIT: i32 = 100;
+const DEFAULT_PLAYERS_LIMIT: u8 = 20;
+const MAX_PLAYERS_LIMIT: u8 = 100;
 
 type PlayerCursor = Cursor<Uuid, Uuid>;
 
@@ -60,16 +59,18 @@ impl PlayerRecord {
 }
 
 #[async_trait]
-impl Players for Api {
+impl Players<String> for Api {
+    type Claims = ApiKey;
+
     async fn get_player_by_id(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        path_params: GetPlayerByIdPathParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &GetPlayerByIdPathParams,
     ) -> Result<GetPlayerByIdResponse, String> {
-        let api_key = current_api_key()?;
-        if !can_read_players(&api_key) {
+        if !can_read_players(api_key) {
             return Ok(
                 GetPlayerByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
@@ -96,24 +97,24 @@ impl Players for Api {
 
         Ok(
             GetPlayerByIdResponse::Status200_ThePlayerWasRetrievedSuccessfully(
-                record.into_list_item(username, can_read_discord_id(&api_key)),
+                record.into_list_item(username, can_read_discord_id(api_key)),
             ),
         )
     }
 
     async fn list_players(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        query_params: ListPlayersQueryParams,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        query_params: &ListPlayersQueryParams,
     ) -> Result<ListPlayersResponse, String> {
-        let api_key = current_api_key()?;
-        if !can_read_players(&api_key) {
+        if !can_read_players(api_key) {
             return Ok(ListPlayersResponse::Status403_TheAPIKeyLacksTheRequiredScope);
         }
 
-        let can_read_discord_id = can_read_discord_id(&api_key);
+        let can_read_discord_id = can_read_discord_id(api_key);
         if query_params.discord_id.is_some() && !can_read_discord_id {
             return Ok(ListPlayersResponse::Status403_TheAPIKeyLacksTheRequiredScope);
         }
@@ -156,7 +157,7 @@ impl Players for Api {
             "SELECT id, discord_id, status, current_server, bio \
              FROM players WHERE 1 = 1",
         );
-        if let Some(discord_id) = query_params.discord_id {
+        if let Some(discord_id) = &query_params.discord_id {
             query.push(" AND discord_id = ").push_bind(discord_id);
         }
         if let Some(status) = status {
@@ -233,13 +234,13 @@ impl Players for Api {
 
     async fn update_player_by_id(
         &self,
-        _method: Method,
-        _host: Host,
-        _cookies: CookieJar,
-        path_params: UpdatePlayerByIdPathParams,
-        body: UpdatePlayerByIdRequest,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &UpdatePlayerByIdPathParams,
+        body: &UpdatePlayerByIdRequest,
     ) -> Result<UpdatePlayerByIdResponse, String> {
-        let api_key = current_api_key()?;
         if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
             return Ok(
                 UpdatePlayerByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
@@ -253,8 +254,8 @@ impl Players for Api {
         {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
         }
-        let status = match body.status {
-            Some(status) => match PlayerStatus::from_str(&status) {
+        let status = match &body.status {
+            Some(status) => match PlayerStatus::from_str(status) {
                 Ok(status) => Some(status.to_string()),
                 Err(_) => {
                     return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
@@ -262,10 +263,9 @@ impl Players for Api {
             },
             None => None,
         };
-        if body
-            .bio
-            .as_ref()
-            .is_some_and(|bio| !(1..=160).contains(&bio.chars().count()))
+        if body.bio.as_ref().is_some_and(|bio| {
+            matches!(bio, graph_api::types::Nullable::Present(bio) if !(1..=160).contains(&bio.chars().count()))
+        })
         {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
         }
@@ -289,21 +289,23 @@ impl Players for Api {
 
         let mut query = QueryBuilder::<MySql>::new("UPDATE players SET ");
         let mut updates = query.separated(", ");
-        if let Some(discord_id) = body.discord_id {
+        if let Some(discord_id) = &body.discord_id {
             updates
                 .push("discord_id = ")
-                .push_bind_unseparated(discord_id);
+                .push_bind_unseparated(nullable_ref(discord_id));
         }
         if let Some(status) = status {
             updates.push("status = ").push_bind_unseparated(status);
         }
-        if let Some(current_server) = body.current_server {
+        if let Some(current_server) = &body.current_server {
             updates
                 .push("current_server = ")
-                .push_bind_unseparated(current_server);
+                .push_bind_unseparated(nullable_ref(current_server));
         }
-        if let Some(bio) = body.bio {
-            updates.push("bio = ").push_bind_unseparated(bio);
+        if let Some(bio) = &body.bio {
+            updates
+                .push("bio = ")
+                .push_bind_unseparated(nullable_ref(bio));
         }
         query.push(" WHERE id = ").push_bind(path_params.player_id);
 
@@ -328,9 +330,16 @@ impl Players for Api {
 
         Ok(
             UpdatePlayerByIdResponse::Status200_ThePlayerWasUpdatedSuccessfully(
-                record.into_list_item(username, can_read_discord_id(&api_key)),
+                record.into_list_item(username, can_read_discord_id(api_key)),
             ),
         )
+    }
+}
+
+fn nullable_ref(value: &graph_api::types::Nullable<String>) -> Option<&str> {
+    match value {
+        graph_api::types::Nullable::Present(value) => Some(value),
+        graph_api::types::Nullable::Null => None,
     }
 }
 
