@@ -609,3 +609,16 @@ fn image_extension(content_type: &str) -> &'static str {
         _ => "",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn general_is_a_valid_patch_note_target() {
+        assert_eq!(
+            PatchNoteTarget::from_str("general"),
+            Ok(PatchNoteTarget::General)
+        );
+    }
+}

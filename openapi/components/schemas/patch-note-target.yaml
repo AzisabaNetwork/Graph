@@ -1,6 +1,7 @@
 type: string
 description: The target of the patch note.
 enum:
+  - general
   - creativePro
   - frontier
   - life
