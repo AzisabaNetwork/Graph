@@ -624,6 +624,7 @@ mod tests {
         for (value, expected) in [
             ("remove", PatchNoteCategory::Remove),
             ("event", PatchNoteCategory::Event),
+            ("map", PatchNoteCategory::Map),
         ] {
             assert_eq!(PatchNoteCategory::from_str(value), Ok(expected));
         }

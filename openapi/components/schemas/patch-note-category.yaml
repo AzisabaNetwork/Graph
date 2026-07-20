@@ -6,4 +6,5 @@ enum:
   - feature
   - fix
   - improvement
+  - map
   - remove
