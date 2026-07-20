@@ -615,10 +615,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn general_is_a_valid_patch_note_target() {
+    fn new_patch_note_values_are_valid() {
         assert_eq!(
             PatchNoteTarget::from_str("general"),
             Ok(PatchNoteTarget::General)
         );
+
+        for (value, expected) in [
+            ("remove", PatchNoteCategory::Remove),
+            ("event", PatchNoteCategory::Event),
+        ] {
+            assert_eq!(PatchNoteCategory::from_str(value), Ok(expected));
+        }
     }
 }

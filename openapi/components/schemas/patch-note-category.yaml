@@ -2,6 +2,8 @@ type: string
 description: The category of the patch note.
 enum:
   - balance
+  - event
   - feature
   - fix
   - improvement
+  - remove
