@@ -10,7 +10,7 @@ use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
-use std::net::IpAddr;
+use std::{collections::BTreeMap, net::IpAddr};
 use uuid::Uuid;
 
 const DEFAULT_LIMIT: u8 = 20;
@@ -145,6 +145,14 @@ struct ProofRecord {
     public: bool,
 }
 
+#[derive(Debug, FromRow)]
+struct PunishmentProofRecord {
+    punish_id: i64,
+    id: i64,
+    text: String,
+    public: bool,
+}
+
 fn can_read(key: &ApiKey) -> bool {
     key.has_scope(&ApiKeyScope::PunishmentsColonRead)
 }
@@ -185,11 +193,18 @@ fn punishable_ip(value: &str) -> bool {
         || a >= 240)
 }
 
-fn valid_target(kind: StoredPunishmentType, target: &str) -> bool {
+fn normalize_target(kind: StoredPunishmentType, target: &str) -> Option<String> {
     if kind.ip_based() {
-        punishable_ip(target)
+        punishable_ip(target).then(|| {
+            target
+                .parse::<IpAddr>()
+                .expect("validated IP address")
+                .to_string()
+        })
     } else {
-        Uuid::parse_str(target).is_ok()
+        Uuid::parse_str(target)
+            .ok()
+            .map(|target| target.to_string())
     }
 }
 
@@ -242,6 +257,17 @@ impl ProofRecord {
     }
 }
 
+impl PunishmentProofRecord {
+    fn into_api(self) -> Result<ListPunishments200ResponseItemsInnerProofsInner, String> {
+        ProofRecord {
+            id: self.id,
+            text: self.text,
+            public: self.public,
+        }
+        .into_api()
+    }
+}
+
 impl Api {
     async fn load_proofs(
         &self,
@@ -259,9 +285,44 @@ impl Api {
         .collect()
     }
 
-    async fn record_into_api(
+    async fn load_proofs_for_punishments(
+        &self,
+        punishment_ids: &[i64],
+    ) -> Result<BTreeMap<i64, Vec<ListPunishments200ResponseItemsInnerProofsInner>>, String> {
+        if punishment_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let mut query = QueryBuilder::<MySql>::new(
+            "SELECT punish_id, id, text, public FROM proofs WHERE punish_id IN (",
+        );
+        let mut separated = query.separated(", ");
+        for punishment_id in punishment_ids {
+            separated.push_bind(punishment_id);
+        }
+        separated.push_unseparated(") ORDER BY punish_id, id");
+
+        let rows = query
+            .build_query_as::<PunishmentProofRecord>()
+            .fetch_all(self.punishments_pool())
+            .await
+            .map_err(db_error)?;
+        let mut proofs =
+            BTreeMap::<i64, Vec<ListPunishments200ResponseItemsInnerProofsInner>>::new();
+        for row in rows {
+            let punishment_id = row.punish_id;
+            proofs
+                .entry(punishment_id)
+                .or_default()
+                .push(row.into_api()?);
+        }
+        Ok(proofs)
+    }
+
+    fn record_into_api(
         &self,
         record: PunishmentRecord,
+        proofs: Vec<ListPunishments200ResponseItemsInnerProofsInner>,
     ) -> Result<ListPunishments200ResponseItemsInner, String> {
         let kind = StoredPunishmentType::from_db(&record.r#type)
             .ok_or_else(|| format!("unknown punishment type in database: {}", record.r#type))?;
@@ -289,7 +350,6 @@ impl Api {
             }
             _ => Nullable::Null,
         };
-        let proofs = self.load_proofs(record.id).await?;
         Ok(ListPunishments200ResponseItemsInner::new(
             row_id(record.id)?,
             record.name,
@@ -315,7 +375,10 @@ impl Api {
             "SELECT h.id, h.name, h.target, h.reason, h.operator, h.type, h.start, h.end, h.server, h.extra, (p.id IS NOT NULL) AS active, u.id AS revocation_id, u.reason AS revocation_reason, u.timestamp AS revocation_timestamp, u.operator AS revocation_operator FROM punishmentHistory h LEFT JOIN punishments p ON p.id = h.id LEFT JOIN unpunish u ON u.punish_id = h.id WHERE h.id = ? ORDER BY u.id DESC LIMIT 1"
         ).bind(id).fetch_optional(self.punishments_pool()).await.map_err(db_error)?;
         match record {
-            Some(record) => self.record_into_api(record).await.map(Some),
+            Some(record) => {
+                let proofs = self.load_proofs(record.id).await?;
+                self.record_into_api(record, proofs).map(Some)
+            }
             None => Ok(None),
         }
     }
@@ -377,17 +440,16 @@ impl Punishments<String> for Api {
         let Some(end) = end_millis(kind, &body.expires_at, now) else {
             return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
         };
-        if !non_empty(&body.target_name)
-            || !non_empty(&body.reason)
-            || !non_empty(&body.server)
-            || !valid_target(kind, &body.target)
-        {
+        let Some(target) = normalize_target(kind, &body.target) else {
+            return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
+        };
+        if !non_empty(&body.target_name) || !non_empty(&body.reason) || !non_empty(&body.server) {
             return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
         }
         let server = body.server.to_lowercase();
         let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
         let conflict = sqlx::query_scalar::<_, i64>("SELECT id FROM punishments WHERE target = ? AND type = ? AND server = ? LIMIT 1 FOR UPDATE")
-            .bind(&body.target).bind(kind.db()).bind(&server).fetch_optional(&mut *tx).await.map_err(db_error)?;
+            .bind(&target).bind(kind.db()).bind(&server).fetch_optional(&mut *tx).await.map_err(db_error)?;
         if conflict.is_some() {
             tx.rollback().await.map_err(db_error)?;
             return Ok(
@@ -395,7 +457,7 @@ impl Punishments<String> for Api {
             );
         }
         let result = sqlx::query("INSERT INTO punishmentHistory (name, target, reason, operator, type, start, end, server, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')")
-            .bind(&body.target_name).bind(&body.target).bind(&body.reason).bind(actor_id.to_string()).bind(kind.db())
+            .bind(&body.target_name).bind(&target).bind(&body.reason).bind(actor_id.to_string()).bind(kind.db())
             .bind(now.timestamp_millis()).bind(end).bind(&server).execute(&mut *tx).await.map_err(db_error)?;
         let id = i64::try_from(result.last_insert_id())
             .map_err(|_| "punishment ID exceeds signed 64-bit range".to_string())?;
@@ -529,9 +591,12 @@ impl Punishments<String> for Api {
         } else {
             None
         };
+        let punishment_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+        let mut proofs = self.load_proofs_for_punishments(&punishment_ids).await?;
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
-            items.push(self.record_into_api(row).await?);
+            let row_proofs = proofs.remove(&row.id).unwrap_or_default();
+            items.push(self.record_into_api(row, row_proofs)?);
         }
         Ok(
             graph_api::apis::punishments::ListPunishmentsResponse::Status200_PunishmentsWereRetrievedSuccessfully(
@@ -885,13 +950,23 @@ mod tests {
     }
 
     #[test]
-    fn target_validation_matches_legacy_rules() {
-        assert!(valid_target(
-            StoredPunishmentType::Ban,
-            "550e8400-e29b-41d4-a716-446655440000"
-        ));
-        assert!(!valid_target(StoredPunishmentType::Ban, "1.1.1.1"));
-        assert!(valid_target(StoredPunishmentType::IpBan, "1.1.1.1"));
+    fn target_validation_matches_legacy_rules_and_normalizes_values() {
+        assert_eq!(
+            normalize_target(
+                StoredPunishmentType::Ban,
+                "550E8400E29B41D4A716446655440000"
+            ),
+            Some("550e8400-e29b-41d4-a716-446655440000".to_string())
+        );
+        assert_eq!(normalize_target(StoredPunishmentType::Ban, "1.1.1.1"), None);
+        assert_eq!(
+            normalize_target(StoredPunishmentType::IpBan, "1.1.1.1"),
+            Some("1.1.1.1".to_string())
+        );
+        assert_eq!(
+            normalize_target(StoredPunishmentType::IpBan, "2001:4860:4860:0:0:0:0:8888"),
+            Some("2001:4860:4860::8888".to_string())
+        );
         for ip in [
             "127.0.0.1",
             "10.0.0.1",
@@ -1286,14 +1361,16 @@ mod tests {
         .fetch_all(&pool)
         .await
         .unwrap();
+        let punishment_event_data = serde_json::json!({"id": first.id}).to_string();
+        let removal_event_data = serde_json::json!({"punish_id": first.id}).to_string();
         assert!(events.iter().any(|event| event.0 == "add_punishment"
-            && event.1 == serde_json::json!({"id": first.id}).to_string()
+            && event.1 == punishment_event_data
             && event.2));
         assert!(events.iter().any(|event| event.0 == "updated_punishment"
-            && event.1 == serde_json::json!({"id": first.id}).to_string()
+            && event.1 == punishment_event_data
             && event.2));
         assert!(events.iter().any(|event| event.0 == "removed_punishment"
-            && event.1 == serde_json::json!({"punish_id": first.id}).to_string()
+            && event.1 == removal_event_data
             && event.2));
 
         sqlx::query("CREATE TRIGGER graph_test_fail_events BEFORE INSERT ON events FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'graph rollback test'")
