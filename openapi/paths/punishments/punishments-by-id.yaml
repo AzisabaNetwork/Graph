@@ -1,9 +1,11 @@
 get:
   summary: Get a punishment
   operationId: getPunishmentById
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:read"]
+    - ApiKeyAuth:
+        - punishments:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
   responses:
@@ -13,16 +15,21 @@ get:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Punishment"
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "404": { description: The punishment was not found. }
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The punishment was not found.
 
 patch:
   summary: Update an active punishment
   operationId: updatePunishmentById
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:write"]
+    - ApiKeyAuth:
+        - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
   requestBody:
@@ -38,17 +45,23 @@ patch:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Punishment"
-    "400": { description: The request body is invalid. }
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "404": { description: The active punishment was not found. }
+    "400":
+      description: The request body is invalid.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The active punishment was not found.
 
 delete:
   summary: Revoke an active punishment
   operationId: deletePunishmentById
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:write"]
+    - ApiKeyAuth:
+        - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
   requestBody:
@@ -58,8 +71,13 @@ delete:
         schema:
           $ref: "../../openapi.yaml#/components/schemas/RevokePunishmentRequest"
   responses:
-    "204": { description: The punishment was revoked successfully. }
-    "400": { description: The request body is invalid. }
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "404": { description: The active punishment was not found. }
+    "204":
+      description: The punishment was revoked successfully.
+    "400":
+      description: The request body is invalid.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The active punishment was not found.

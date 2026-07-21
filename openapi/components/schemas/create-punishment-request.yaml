@@ -1,16 +1,27 @@
 type: object
 additionalProperties: false
-required: [targetName, target, type, reason, expiresAt, server]
+required:
+  - targetName
+  - target
+  - type
+  - reason
+  - expiresAt
+  - server
 properties:
   targetName:
     $ref: "./punishment.yaml#/properties/targetName"
+
   target:
     $ref: "./punishment.yaml#/properties/target"
+
   type:
     $ref: "../../openapi.yaml#/components/schemas/PunishmentType"
+
   reason:
     $ref: "./punishment.yaml#/properties/reason"
+
   expiresAt:
     $ref: "./punishment.yaml#/properties/expiresAt"
+
   server:
     $ref: "./punishment.yaml#/properties/server"

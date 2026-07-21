@@ -1,9 +1,14 @@
 type: object
-required: [items, nextCursor]
+required:
+  - items
+  - nextCursor
 properties:
   items:
     type: array
     items:
       $ref: "../../openapi.yaml#/components/schemas/Punishment"
+
   nextCursor:
-    type: [string, "null"]
+    type:
+      - string
+      - "null"

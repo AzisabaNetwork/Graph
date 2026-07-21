@@ -1,29 +1,44 @@
 get:
   summary: List punishments
   operationId: listPunishments
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:read"]
+    - ApiKeyAuth:
+        - punishments:read
   parameters:
     - name: target
       in: query
-      schema: { type: string }
+      schema:
+        type: string
+
     - name: type
       in: query
       schema:
         $ref: "../../openapi.yaml#/components/schemas/PunishmentType"
+
     - name: server
       in: query
-      schema: { type: string }
+      schema:
+        type: string
+
     - name: active
       in: query
-      schema: { type: boolean }
+      schema:
+        type: boolean
+
     - name: cursor
       in: query
-      schema: { type: string }
+      schema:
+        type: string
+
     - name: limit
       in: query
-      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
   responses:
     "200":
       description: Punishments were retrieved successfully.
@@ -31,16 +46,21 @@ get:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/ListPunishmentsResponse"
-    "400": { description: The request contains invalid query parameters. }
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
+    "400":
+      description: The request contains invalid query parameters.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 post:
   summary: Create a punishment
   operationId: createPunishment
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:write"]
+    - ApiKeyAuth:
+        - punishments:write
   requestBody:
     required: true
     content:
@@ -54,7 +74,11 @@ post:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Punishment"
-    "400": { description: The request body is invalid. }
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "409": { description: A conflicting active punishment already exists. }
+    "400":
+      description: The request body is invalid.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "409":
+      description: A conflicting active punishment already exists.

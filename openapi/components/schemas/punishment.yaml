@@ -1,41 +1,68 @@
 type: object
-required: [id, targetName, target, type, reason, actorId, createdAt, expiresAt, server, seen, active, proofs, revocation]
+required:
+  - id
+  - targetName
+  - target
+  - type
+  - reason
+  - actorId
+  - createdAt
+  - expiresAt
+  - server
+  - seen
+  - active
+  - proofs
+  - revocation
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/PunishmentId"
+
   targetName:
     type: string
     minLength: 1
+
   target:
     type: string
     minLength: 1
+
   type:
     $ref: "../../openapi.yaml#/components/schemas/PunishmentType"
+
   reason:
     type: string
     minLength: 1
+
   actorId:
     type: string
     format: uuid
+
   createdAt:
     type: string
     format: date-time
     readOnly: true
+
   expiresAt:
-    type: [string, "null"]
+    type:
+      - string
+      - "null"
     format: date-time
+
   server:
     type: string
     minLength: 1
+
   seen:
     type: boolean
+
   active:
     type: boolean
     readOnly: true
+
   proofs:
     type: array
     items:
       $ref: "../../openapi.yaml#/components/schemas/Proof"
+
   revocation:
     oneOf:
       - $ref: "../../openapi.yaml#/components/schemas/Revocation"

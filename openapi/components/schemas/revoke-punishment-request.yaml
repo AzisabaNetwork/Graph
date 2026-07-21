@@ -1,6 +1,7 @@
 type: object
 additionalProperties: false
-required: [reason]
+required:
+  - reason
 properties:
   reason:
     type: string

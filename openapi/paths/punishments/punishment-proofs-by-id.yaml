@@ -1,9 +1,11 @@
 get:
   summary: Get a punishment proof
   operationId: getPunishmentProofById
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:read"]
+    - ApiKeyAuth:
+        - punishments:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
     - $ref: "../../openapi.yaml#/components/parameters/ProofId"
@@ -14,16 +16,21 @@ get:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Proof"
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "404": { description: The punishment or proof was not found. }
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The punishment or proof was not found.
 
 patch:
   summary: Update a punishment proof
   operationId: updatePunishmentProofById
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:write"]
+    - ApiKeyAuth:
+        - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
     - $ref: "../../openapi.yaml#/components/parameters/ProofId"
@@ -40,22 +47,32 @@ patch:
         application/json:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Proof"
-    "400": { description: The request body is invalid. }
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "404": { description: The punishment or proof was not found. }
+    "400":
+      description: The request body is invalid.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The punishment or proof was not found.
 
 delete:
   summary: Delete a punishment proof
   operationId: deletePunishmentProofById
-  tags: [punishments]
+  tags:
+    - punishments
   security:
-    - ApiKeyAuth: ["punishments:write"]
+    - ApiKeyAuth:
+        - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
     - $ref: "../../openapi.yaml#/components/parameters/ProofId"
   responses:
-    "204": { description: The proof was deleted successfully. }
-    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
-    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
-    "404": { description: The punishment or proof was not found. }
+    "204":
+      description: The proof was deleted successfully.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The punishment or proof was not found.
