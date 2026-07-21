@@ -12,3 +12,5 @@ enum:
   - players:read
   - players:read-details
   - players:write
+  - punishments:read
+  - punishments:write

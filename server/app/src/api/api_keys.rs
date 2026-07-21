@@ -30,6 +30,7 @@ struct ApiKeyRecord {
     name: String,
     created_at: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
+    player_id: Option<uuid::Uuid>,
 }
 
 impl ApiKeyRecord {
@@ -42,6 +43,7 @@ impl ApiKeyRecord {
             name,
             created_at,
             expires_at,
+            player_id,
         } = self;
 
         let item_scopes = scopes.get(&public_id).cloned().unwrap_or_default();
@@ -52,6 +54,7 @@ impl ApiKeyRecord {
             item_scopes,
             created_at,
             into_nullable(expires_at),
+            into_nullable(player_id),
         )
     }
 }
@@ -83,6 +86,22 @@ impl ApiKeys<String> for Api {
         if !api_key.has_all_scopes(&requested_scopes) {
             return Ok(CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
+
+        let requested_player_id = body
+            .player_id
+            .as_ref()
+            .and_then(|player_id| match player_id {
+                graph_api::types::Nullable::Present(player_id) => Some(*player_id),
+                graph_api::types::Nullable::Null => None,
+            });
+        let player_id = match delegated_player_id(api_key, requested_player_id) {
+            Ok(player_id) => player_id,
+            Err(()) => {
+                return Ok(
+                    CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+                );
+            }
+        };
 
         let created_at = Utc::now();
         let expires_at = body
@@ -135,6 +154,15 @@ impl ApiKeys<String> for Api {
                 .map_err(log_database_error)?;
         }
 
+        if let Some(player_id) = player_id {
+            sqlx::query("INSERT INTO api_key_players (api_key_public_id, player_id) VALUES (?, ?)")
+                .bind(&public_id)
+                .bind(player_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+        }
+
         transaction.commit().await.map_err(log_database_error)?;
 
         Ok(
@@ -145,6 +173,7 @@ impl ApiKeys<String> for Api {
                     scopes,
                     created_at,
                     into_nullable(expires_at),
+                    into_nullable(player_id),
                     token,
                 ),
             ),
@@ -188,9 +217,10 @@ impl ApiKeys<String> for Api {
 
         let record = sqlx::query_as::<_, ApiKeyRecord>(
             r#"
-            SELECT public_id, name, created_at, expires_at
-            FROM api_keys
-            WHERE public_id = ?
+            SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id
+            FROM api_keys k
+            LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id
+            WHERE k.public_id = ?
             "#,
         )
         .bind(&path_params.api_key_id)
@@ -242,20 +272,20 @@ impl ApiKeys<String> for Api {
         };
 
         let mut query = QueryBuilder::<MySql>::new(
-            "SELECT public_id, name, created_at, expires_at FROM api_keys WHERE 1 = 1",
+            "SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id FROM api_keys k LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id WHERE 1 = 1",
         );
         if let Some(cursor) = cursor {
             query
-                .push(" AND (created_at < ")
+                .push(" AND (k.created_at < ")
                 .push_bind(cursor.value)
-                .push(" OR (created_at = ")
+                .push(" OR (k.created_at = ")
                 .push_bind(cursor.value)
-                .push(" AND public_id < ")
+                .push(" AND k.public_id < ")
                 .push_bind(cursor.tie_breaker)
                 .push("))");
         }
         query
-            .push(" ORDER BY created_at DESC, public_id DESC LIMIT ")
+            .push(" ORDER BY k.created_at DESC, k.public_id DESC LIMIT ")
             .push_bind((limit + 1) as i64);
 
         let mut rows = query
@@ -325,6 +355,12 @@ impl Api {
         .execute(&mut *transaction)
         .await
         .map_err(log_database_error)?;
+
+        sqlx::query("DELETE FROM api_key_players WHERE api_key_public_id = ?")
+            .bind(credentials.public_id())
+            .execute(&mut *transaction)
+            .await
+            .map_err(log_database_error)?;
 
         sqlx::query("DELETE FROM api_key_scopes WHERE api_key_public_id = ?")
             .bind(credentials.public_id())
@@ -433,7 +469,192 @@ fn parse_api_key_scopes(scopes: &[String]) -> Option<Vec<ApiKeyScope>> {
     (unique.len() == parsed.len()).then_some(parsed)
 }
 
+fn delegated_player_id(
+    api_key: &ApiKey,
+    requested: Option<uuid::Uuid>,
+) -> Result<Option<uuid::Uuid>, ()> {
+    match api_key.player_id {
+        graph_api::types::Nullable::Present(player_id) => {
+            if requested.is_some_and(|requested| requested != player_id) {
+                Err(())
+            } else {
+                Ok(Some(player_id))
+            }
+        }
+        graph_api::types::Nullable::Null => {
+            if requested.is_some() && !api_key.scopes.iter().any(|scope| scope == "*") {
+                Err(())
+            } else {
+                Ok(requested)
+            }
+        }
+    }
+}
+
 fn log_database_error(error: sqlx::Error) -> String {
     tracing::error!(?error, "API key database operation failed");
     error.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mojang::PlayerDbClient;
+    use graph_api::types::Nullable;
+    use headers::Header;
+
+    fn test_host() -> Host {
+        let value = http::HeaderValue::from_static("localhost");
+        Host::decode(&mut std::iter::once(&value)).unwrap()
+    }
+
+    fn key(scopes: &[&str], player_id: Option<uuid::Uuid>) -> ApiKey {
+        ApiKey::new(
+            "test".to_string(),
+            "test".to_string(),
+            scopes.iter().map(|scope| (*scope).to_string()).collect(),
+            Utc::now(),
+            Nullable::Null,
+            into_nullable(player_id),
+        )
+    }
+
+    #[test]
+    fn player_key_children_inherit_player() {
+        let player = uuid::Uuid::new_v4();
+        assert_eq!(
+            delegated_player_id(&key(&["api-keys:write"], Some(player)), None),
+            Ok(Some(player))
+        );
+        assert_eq!(
+            delegated_player_id(&key(&["api-keys:write"], Some(player)), Some(player)),
+            Ok(Some(player))
+        );
+    }
+
+    #[test]
+    fn player_key_cannot_delegate_another_player() {
+        assert_eq!(
+            delegated_player_id(
+                &key(&["*"], Some(uuid::Uuid::new_v4())),
+                Some(uuid::Uuid::new_v4())
+            ),
+            Err(())
+        );
+    }
+
+    #[test]
+    fn only_unlinked_star_key_can_assign_player() {
+        let player = uuid::Uuid::new_v4();
+        assert_eq!(
+            delegated_player_id(&key(&["*"], None), Some(player)),
+            Ok(Some(player))
+        );
+        assert_eq!(
+            delegated_player_id(&key(&["api-keys:write"], None), Some(player)),
+            Err(())
+        );
+        assert_eq!(
+            delegated_player_id(&key(&["api-keys:write"], None), None),
+            Ok(None)
+        );
+    }
+
+    #[tokio::test]
+    async fn mariadb_player_link_is_persisted_and_loaded() {
+        let Ok(database_url) = std::env::var("GRAPH_TEST_DATABASE_URL") else {
+            eprintln!("GRAPH_TEST_DATABASE_URL is not set; skipping MariaDB integration test");
+            return;
+        };
+        let pool = sqlx::MySqlPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+
+        let api = Api::new(
+            pool.clone(),
+            pool.clone(),
+            None,
+            PlayerDbClient::new().unwrap(),
+        );
+        let credentials = ApiKeyCredentials::generate().unwrap();
+        api.provision_bootstrap_api_key(&credentials.to_token())
+            .await
+            .unwrap();
+        let player_id = uuid::Uuid::new_v4();
+        sqlx::query("INSERT INTO players (id) VALUES (?)")
+            .bind(player_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let parent = ApiKey::new(
+            "bootstrap".to_string(),
+            credentials.public_id().to_string(),
+            vec!["*".to_string()],
+            Utc::now(),
+            Nullable::Null,
+            Nullable::Null,
+        );
+        let mut request = CreateApiKeyRequest::new(
+            "linked integration key".to_string(),
+            vec!["punishments:write".to_string()],
+        );
+        request.player_id = Some(Nullable::Present(player_id));
+        let response = api
+            .create_api_key(
+                &Method::POST,
+                &test_host(),
+                &CookieJar::new(),
+                &parent,
+                &request,
+            )
+            .await
+            .unwrap();
+        let created = match response {
+            CreateApiKeyResponse::Status201_TheAPIKeyWasCreatedSuccessfully(created) => created,
+            response => panic!("unexpected response: {response:?}"),
+        };
+        assert_eq!(created.player_id, Nullable::Present(player_id));
+
+        let stored_player_id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT player_id FROM api_key_players WHERE api_key_public_id = ?",
+        )
+        .bind(&created.public_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_player_id, player_id);
+
+        let loaded = api
+            .get_api_key_by_id(
+                &Method::GET,
+                &test_host(),
+                &CookieJar::new(),
+                &parent,
+                &GetApiKeyByIdPathParams {
+                    api_key_id: created.public_id.clone(),
+                },
+            )
+            .await
+            .unwrap();
+        match loaded {
+            GetApiKeyByIdResponse::Status200_TheAPIKeyWasRetrievedSuccessfully(loaded) => {
+                assert_eq!(loaded.player_id, Nullable::Present(player_id));
+            }
+            response => panic!("unexpected response: {response:?}"),
+        }
+
+        sqlx::query("DELETE FROM api_keys WHERE public_id = ?")
+            .bind(&created.public_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM players WHERE id = ?")
+            .bind(player_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        api.delete_api_key_tree(credentials.public_id())
+            .await
+            .unwrap();
+    }
 }

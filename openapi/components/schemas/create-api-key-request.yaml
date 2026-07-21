@@ -16,3 +16,6 @@ properties:
 
   expiresAt:
     $ref: "./api-key.yaml#/properties/expiresAt"
+
+  playerId:
+    $ref: "./api-key.yaml#/properties/playerId"

@@ -1,0 +1,46 @@
+get:
+  summary: List punishment proofs
+  operationId: listPunishmentProofs
+  tags: [punishments]
+  security:
+    - ApiKeyAuth: ["punishments:read"]
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
+  responses:
+    "200":
+      description: Proofs were retrieved successfully.
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: "../../openapi.yaml#/components/schemas/Proof"
+    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
+    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
+    "404": { description: The punishment was not found. }
+
+post:
+  summary: Add proof to an active punishment
+  operationId: createPunishmentProof
+  tags: [punishments]
+  security:
+    - ApiKeyAuth: ["punishments:write"]
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: "../../openapi.yaml#/components/schemas/CreateProofRequest"
+  responses:
+    "201":
+      description: The proof was created successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Proof"
+    "400": { description: The request body is invalid. }
+    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
+    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
+    "404": { description: The active punishment was not found. }

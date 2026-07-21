@@ -59,6 +59,7 @@ mod tests {
             scopes.iter().map(ToString::to_string).collect(),
             Utc::now(),
             Nullable::Null,
+            Nullable::Null,
         )
     }
 }

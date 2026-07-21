@@ -1,6 +1,7 @@
 mod api_keys;
 mod patch_notes;
 mod players;
+mod punishments;
 
 use crate::mojang::PlayerDbClient;
 use aws_config::BehaviorVersion;
@@ -14,6 +15,7 @@ use std::env;
 #[derive(Clone, Debug)]
 pub(crate) struct Api {
     pool: MySqlPool,
+    punishments_pool: MySqlPool,
     object_storage: Option<ObjectStorage>,
     player_db: PlayerDbClient,
 }
@@ -21,11 +23,13 @@ pub(crate) struct Api {
 impl Api {
     pub(crate) fn new(
         pool: MySqlPool,
+        punishments_pool: MySqlPool,
         object_storage: Option<ObjectStorage>,
         player_db: PlayerDbClient,
     ) -> Self {
         Self {
             pool,
+            punishments_pool,
             object_storage,
             player_db,
         }
@@ -33,6 +37,10 @@ impl Api {
 
     pub(crate) fn pool(&self) -> &MySqlPool {
         &self.pool
+    }
+
+    pub(crate) fn punishments_pool(&self) -> &MySqlPool {
+        &self.punishments_pool
     }
 }
 

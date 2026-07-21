@@ -1,0 +1,18 @@
+type: object
+required: [id, reason, actorId, createdAt]
+properties:
+  id:
+    type: integer
+    format: int64
+    minimum: 1
+    readOnly: true
+  reason:
+    type: string
+    minLength: 1
+  actorId:
+    type: string
+    format: uuid
+  createdAt:
+    type: string
+    format: date-time
+    readOnly: true

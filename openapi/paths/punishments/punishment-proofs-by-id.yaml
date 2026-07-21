@@ -1,0 +1,61 @@
+get:
+  summary: Get a punishment proof
+  operationId: getPunishmentProofById
+  tags: [punishments]
+  security:
+    - ApiKeyAuth: ["punishments:read"]
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
+    - $ref: "../../openapi.yaml#/components/parameters/ProofId"
+  responses:
+    "200":
+      description: The proof was retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Proof"
+    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
+    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
+    "404": { description: The punishment or proof was not found. }
+
+patch:
+  summary: Update a punishment proof
+  operationId: updatePunishmentProofById
+  tags: [punishments]
+  security:
+    - ApiKeyAuth: ["punishments:write"]
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
+    - $ref: "../../openapi.yaml#/components/parameters/ProofId"
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: "../../openapi.yaml#/components/schemas/UpdateProofRequest"
+  responses:
+    "200":
+      description: The proof was updated successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Proof"
+    "400": { description: The request body is invalid. }
+    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
+    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
+    "404": { description: The punishment or proof was not found. }
+
+delete:
+  summary: Delete a punishment proof
+  operationId: deletePunishmentProofById
+  tags: [punishments]
+  security:
+    - ApiKeyAuth: ["punishments:write"]
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
+    - $ref: "../../openapi.yaml#/components/parameters/ProofId"
+  responses:
+    "204": { description: The proof was deleted successfully. }
+    "401": { $ref: "../../openapi.yaml#/components/responses/Unauthorized" }
+    "403": { $ref: "../../openapi.yaml#/components/responses/Forbidden" }
+    "404": { description: The punishment or proof was not found. }

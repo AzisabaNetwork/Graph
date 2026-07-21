@@ -1,0 +1,5 @@
+name: punishmentId
+in: path
+required: true
+schema:
+  $ref: "../../openapi.yaml#/components/schemas/PunishmentId"
