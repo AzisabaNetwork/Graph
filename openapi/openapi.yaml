@@ -20,6 +20,8 @@ tags:
     description: Operations related to patch notes.
   - name: players
     description: Operations related to players.
+  - name: punishments
+    description: Operations related to punishment records and proofs.
 
 paths:
   /api-keys:
@@ -34,6 +36,14 @@ paths:
     $ref: "./paths/players/players.yaml"
   /players/{playerId}:
     $ref: "./paths/players/players-by-id.yaml"
+  /punishments:
+    $ref: "./paths/punishments/punishments.yaml"
+  /punishments/{punishmentId}:
+    $ref: "./paths/punishments/punishments-by-id.yaml"
+  /punishments/{punishmentId}/proofs:
+    $ref: "./paths/punishments/punishment-proofs.yaml"
+  /punishments/{punishmentId}/proofs/{proofId}:
+    $ref: "./paths/punishments/punishment-proofs-by-id.yaml"
 
 components:
   parameters:
@@ -43,6 +53,10 @@ components:
       $ref: "./components/parameters/patch-note-id.yaml"
     PlayerId:
       $ref: "./components/parameters/player-id.yaml"
+    PunishmentId:
+      $ref: "./components/parameters/punishment-id.yaml"
+    ProofId:
+      $ref: "./components/parameters/proof-id.yaml"
 
   responses:
     Unauthorized:
@@ -83,6 +97,30 @@ components:
       $ref: "./components/schemas/player-status.yaml"
     UpdatePlayerRequest:
       $ref: "./components/schemas/update-player-request.yaml"
+    Punishment:
+      $ref: "./components/schemas/punishment.yaml"
+    PunishmentType:
+      $ref: "./components/schemas/punishment-type.yaml"
+    PunishmentId:
+      $ref: "./components/schemas/punishment-id.yaml"
+    Proof:
+      $ref: "./components/schemas/proof.yaml"
+    ProofId:
+      $ref: "./components/schemas/proof-id.yaml"
+    Revocation:
+      $ref: "./components/schemas/revocation.yaml"
+    CreatePunishmentRequest:
+      $ref: "./components/schemas/create-punishment-request.yaml"
+    UpdatePunishmentRequest:
+      $ref: "./components/schemas/update-punishment-request.yaml"
+    RevokePunishmentRequest:
+      $ref: "./components/schemas/revoke-punishment-request.yaml"
+    ListPunishmentsResponse:
+      $ref: "./components/schemas/list-punishments-response.yaml"
+    CreateProofRequest:
+      $ref: "./components/schemas/create-proof-request.yaml"
+    UpdateProofRequest:
+      $ref: "./components/schemas/update-proof-request.yaml"
 
   securitySchemes:
     ApiKeyAuth:

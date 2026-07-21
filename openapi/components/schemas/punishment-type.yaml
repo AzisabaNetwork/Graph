@@ -1,0 +1,14 @@
+type: string
+enum:
+  - ban
+  - tempBan
+  - ipBan
+  - tempIpBan
+  - mute
+  - tempMute
+  - ipMute
+  - tempIpMute
+  - warning
+  - caution
+  - kick
+  - note

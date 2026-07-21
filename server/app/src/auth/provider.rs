@@ -1,4 +1,4 @@
-use crate::api::Api;
+use crate::api::{Api, into_nullable};
 use crate::auth::credentials::ApiKeyCredentials;
 use async_trait::async_trait;
 use axum::http::HeaderMap;
@@ -16,6 +16,7 @@ struct ApiKeyRecord {
     secret_digest: Vec<u8>,
     created_at: DateTime<Utc>,
     expires_at: Option<DateTime<Utc>>,
+    player_id: Option<uuid::Uuid>,
 }
 
 #[async_trait]
@@ -40,9 +41,10 @@ impl ApiAuthBasic for Api {
 
         let api_key = match sqlx::query_as::<_, ApiKeyRecord>(
             r#"
-            SELECT name, public_id, secret_digest, created_at, expires_at
-            FROM api_keys
-            WHERE public_id = ?
+            SELECT k.name, k.public_id, k.secret_digest, k.created_at, k.expires_at, p.player_id
+            FROM api_keys k
+            LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id
+            WHERE k.public_id = ?
             "#,
         )
         .bind(credentials.public_id())
@@ -91,6 +93,7 @@ impl ApiAuthBasic for Api {
             scopes,
             api_key.created_at,
             expires_at,
+            into_nullable(api_key.player_id),
         ))
     }
 }

@@ -29,8 +29,18 @@ async fn main() {
         .await
         .expect("failed to run database migrations");
 
+    let punishments_database_url =
+        env::var("PUNISHMENTS_DATABASE_URL").expect("PUNISHMENTS_DATABASE_URL must be set");
+    let punishments_pool = MySqlPool::connect(&punishments_database_url)
+        .await
+        .expect("failed to connect punishments database");
+    validate_punishments_database(&punishments_pool)
+        .await
+        .expect("punishments database schema is incompatible");
+
     let api = Api::new(
         pool,
+        punishments_pool,
         ObjectStorage::from_env().await,
         PlayerDbClient::new().expect("failed to create PlayerDB client"),
     );
@@ -56,4 +66,17 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .expect("graph-server failed");
+}
+
+async fn validate_punishments_database(pool: &MySqlPool) -> Result<(), sqlx::Error> {
+    for query in [
+        "SELECT 1 FROM `punishmentHistory` LIMIT 1",
+        "SELECT 1 FROM `punishments` LIMIT 1",
+        "SELECT 1 FROM `unpunish` LIMIT 1",
+        "SELECT 1 FROM `proofs` LIMIT 1",
+        "SELECT 1 FROM `events` LIMIT 1",
+    ] {
+        sqlx::query(query).fetch_optional(pool).await?;
+    }
+    Ok(())
 }
