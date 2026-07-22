@@ -11,7 +11,7 @@ servers:
   - url: "https://graph.azisaba.net"
 
 security:
-  - ApiKeyAuth: []
+  - ApiKeyAuth: [ ]
 
 tags:
   - name: api-keys
@@ -53,10 +53,10 @@ components:
       $ref: "./components/parameters/patch-note-id.yaml"
     PlayerId:
       $ref: "./components/parameters/player-id.yaml"
-    PunishmentId:
-      $ref: "./components/parameters/punishment-id.yaml"
     ProofId:
       $ref: "./components/parameters/proof-id.yaml"
+    PunishmentId:
+      $ref: "./components/parameters/punishment-id.yaml"
 
   responses:
     Unauthorized:
@@ -75,12 +75,18 @@ components:
       $ref: "./components/schemas/create-api-key-response.yaml"
     CreatePatchNoteRequest:
       $ref: "./components/schemas/create-patch-note-request.yaml"
+    CreateProofRequest:
+      $ref: "./components/schemas/create-proof-request.yaml"
+    CreatePunishmentRequest:
+      $ref: "./components/schemas/create-punishment-request.yaml"
     ListApiKeysResponse:
       $ref: "./components/schemas/list-api-key-response.yaml"
     ListPatchNotesResponse:
       $ref: "./components/schemas/list-patch-notes-response.yaml"
     ListPlayersResponse:
       $ref: "./components/schemas/list-players-response.yaml"
+    ListPunishmentsResponse:
+      $ref: "./components/schemas/list-punishments-response.yaml"
     PatchNote:
       $ref: "./components/schemas/patch-note.yaml"
     PatchNoteCategory:
@@ -95,32 +101,28 @@ components:
       $ref: "./components/schemas/player-id.yaml"
     PlayerStatus:
       $ref: "./components/schemas/player-status.yaml"
-    UpdatePlayerRequest:
-      $ref: "./components/schemas/update-player-request.yaml"
-    Punishment:
-      $ref: "./components/schemas/punishment.yaml"
-    PunishmentType:
-      $ref: "./components/schemas/punishment-type.yaml"
-    PunishmentId:
-      $ref: "./components/schemas/punishment-id.yaml"
     Proof:
       $ref: "./components/schemas/proof.yaml"
     ProofId:
       $ref: "./components/schemas/proof-id.yaml"
+    Punishment:
+      $ref: "./components/schemas/punishment.yaml"
+    PunishmentId:
+      $ref: "./components/schemas/punishment-id.yaml"
+    PunishmentType:
+      $ref: "./components/schemas/punishment-type.yaml"
     Revocation:
       $ref: "./components/schemas/revocation.yaml"
-    CreatePunishmentRequest:
-      $ref: "./components/schemas/create-punishment-request.yaml"
-    UpdatePunishmentRequest:
-      $ref: "./components/schemas/update-punishment-request.yaml"
     RevokePunishmentRequest:
       $ref: "./components/schemas/revoke-punishment-request.yaml"
-    ListPunishmentsResponse:
-      $ref: "./components/schemas/list-punishments-response.yaml"
-    CreateProofRequest:
-      $ref: "./components/schemas/create-proof-request.yaml"
+    UpdateApiKeyRequest:
+      $ref: "./components/schemas/update-api-key-request.yaml"
+    UpdatePlayerRequest:
+      $ref: "./components/schemas/update-player-request.yaml"
     UpdateProofRequest:
       $ref: "./components/schemas/update-proof-request.yaml"
+    UpdatePunishmentRequest:
+      $ref: "./components/schemas/update-punishment-request.yaml"
 
   securitySchemes:
     ApiKeyAuth:

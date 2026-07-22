@@ -7,12 +7,12 @@ use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Utc};
 use graph_api::apis::api_keys::{
     ApiKeys, CreateApiKeyResponse, DeleteApiKeyByIdResponse, GetApiKeyByIdResponse,
-    ListApiKeysResponse,
+    ListApiKeysResponse, UpdateApiKeyByIdResponse,
 };
 use graph_api::models::{
     ApiKey, ApiKeyScope, CreateApiKey201Response, CreateApiKeyRequest, DeleteApiKeyByIdPathParams,
     GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeys200ResponseItemsInner,
-    ListApiKeysQueryParams,
+    ListApiKeysQueryParams, UpdateApiKeyByIdPathParams, UpdateApiKeyByIdRequest,
 };
 use headers::Host;
 use http::Method;
@@ -325,6 +325,158 @@ impl ApiKeys<String> for Api {
         Ok(
             ListApiKeysResponse::Status200_TheAPIKeysWereRetrievedSuccessfully(
                 ListApiKeys200Response::new(items, into_nullable(next_cursor)),
+            ),
+        )
+    }
+
+    async fn update_api_key_by_id(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &UpdateApiKeyByIdPathParams,
+        body: &UpdateApiKeyByIdRequest,
+    ) -> Result<UpdateApiKeyByIdResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::ApiKeysColonWrite) {
+            return Ok(
+                UpdateApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
+        if body
+            .name
+            .as_ref()
+            .is_some_and(|name| !(1..=100).contains(&name.chars().count()))
+        {
+            return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestBodyIsInvalid);
+        }
+
+        let requested_scopes = match body.scopes.as_ref() {
+            Some(scopes) => {
+                let Some(scopes) = parse_api_key_scopes(scopes) else {
+                    return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestBodyIsInvalid);
+                };
+
+                if !api_key.has_all_scopes(&scopes) {
+                    return Ok(UpdateApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
+                }
+
+                Some(scopes)
+            }
+            None => None,
+        };
+
+        let requested_expires_at = match body.expires_at.as_ref() {
+            Some(graph_api::types::Nullable::Present(expires_at)) => {
+                if *expires_at <= Utc::now() {
+                    return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestBodyIsInvalid);
+                }
+
+                Some(Some(*expires_at))
+            }
+            Some(graph_api::types::Nullable::Null) => Some(None),
+            None => None,
+        };
+
+        let requested_player_id = match body.player_id.as_ref() {
+            Some(graph_api::types::Nullable::Present(player_id)) => Some(Some(*player_id)),
+            Some(graph_api::types::Nullable::Null) => Some(None),
+            None => None,
+        };
+
+        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+
+        let exists = sqlx::query_scalar::<_, String>(
+            "SELECT public_id FROM api_keys WHERE public_id = ? FOR UPDATE",
+        )
+        .bind(&path_params.api_key_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(log_database_error)?;
+
+        if exists.is_none() {
+            return Ok(UpdateApiKeyByIdResponse::Status404_TheAPIKeyWasNotFound);
+        }
+
+        if let Some(name) = &body.name {
+            sqlx::query("UPDATE api_keys SET name = ? WHERE public_id = ?")
+                .bind(name)
+                .bind(&path_params.api_key_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+        }
+
+        if let Some(expires_at) = requested_expires_at {
+            sqlx::query("UPDATE api_keys SET expires_at = ? WHERE public_id = ?")
+                .bind(expires_at)
+                .bind(&path_params.api_key_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+        }
+
+        if let Some(scopes) = requested_scopes {
+            sqlx::query("DELETE FROM api_key_scopes WHERE api_key_public_id = ?")
+                .bind(&path_params.api_key_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+
+            for scope in scopes {
+                sqlx::query("INSERT INTO api_key_scopes (api_key_public_id, scope) VALUES (?, ?)")
+                    .bind(&path_params.api_key_id)
+                    .bind(scope.to_string())
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(log_database_error)?;
+            }
+        }
+
+        if let Some(player_id) = requested_player_id {
+            sqlx::query("DELETE FROM api_key_players WHERE api_key_public_id = ?")
+                .bind(&path_params.api_key_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+
+            if let Some(player_id) = player_id {
+                sqlx::query(
+                    r#"INSERT INTO api_key_players (api_key_public_id, player_id)
+                    VALUES (?, ?)
+                    "#,
+                )
+                .bind(&path_params.api_key_id)
+                .bind(player_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+            }
+        }
+
+        transaction.commit().await.map_err(log_database_error)?;
+
+        let record = sqlx::query_as::<_, ApiKeyRecord>(
+            r#"
+            SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id
+            FROM api_keys k
+            LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id
+            WHERE k.public_id = ?
+            "#,
+        )
+        .bind(&path_params.api_key_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(log_database_error)?;
+
+        let scopes = self
+            .load_api_key_scopes(std::slice::from_ref(&path_params.api_key_id))
+            .await?;
+
+        Ok(
+            UpdateApiKeyByIdResponse::Status200_TheAPIKeyWasUpdatedSuccessfully(
+                record.into_list_item(&scopes),
             ),
         )
     }

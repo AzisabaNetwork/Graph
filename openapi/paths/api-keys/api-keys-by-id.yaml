@@ -22,6 +22,38 @@ get:
     "404":
       description: The API key was not found.
 
+patch:
+  summary: Update an API key by ID
+  operationId: updateApiKeyById
+  tags:
+    - api-keys
+  security:
+    - ApiKeyAuth:
+        - api-keys:write
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: "../../openapi.yaml#/components/schemas/UpdateApiKeyRequest"
+  responses:
+    "200":
+      description: The API key was updated successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/ApiKey"
+    "400":
+      description: The request body is invalid.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The API key was not found.
+
 delete:
   summary: Delete an API key by ID
   operationId: deleteApiKeyById
