@@ -368,13 +368,7 @@ impl ApiKeys<String> for Api {
         };
 
         let requested_expires_at = match body.expires_at.as_ref() {
-            Some(graph_api::types::Nullable::Present(expires_at)) => {
-                if *expires_at <= Utc::now() {
-                    return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestBodyIsInvalid);
-                }
-
-                Some(Some(*expires_at))
-            }
+            Some(graph_api::types::Nullable::Present(expires_at)) => Some(Some(*expires_at)),
             Some(graph_api::types::Nullable::Null) => Some(None),
             None => None,
         };
