@@ -194,6 +194,12 @@ impl ApiKeys<String> for Api {
             );
         }
 
+        if path_params.api_key_id == api_key.public_id {
+            return Ok(
+                DeleteApiKeyByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
         if !self.delete_api_key_tree(&path_params.api_key_id).await? {
             return Ok(DeleteApiKeyByIdResponse::Status404_TheAPIKeyWasNotFound);
         }
