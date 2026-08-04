@@ -1,0 +1,69 @@
+name: Publish Rust SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-rust-sdk
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    environment: crates.io
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install generator dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Rust SDK
+        env:
+          VERSION: ${{ inputs.version }}
+        run: pnpm generate:rust-sdk --additional-properties packageVersion="$VERSION"
+
+      - name: Build and test Rust SDK
+        working-directory: sdks/rust/generated
+        run: |
+          cargo check --all-targets
+          cargo test
+
+      - name: Verify crates.io package
+        working-directory: sdks/rust/generated
+        run: cargo publish --dry-run
+
+      - name: Publish package
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        working-directory: sdks/rust/generated
+        run: cargo publish
