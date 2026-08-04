@@ -8,8 +8,8 @@ properties:
     items:
       $ref: "../../openapi.yaml#/components/schemas/Crawl"
 
-    nextCursor:
-      type:
-        - string
-        - "null"
-      description: The cursor for retrieving the next page, or `null` if no more results are available.
+  nextCursor:
+    type:
+      - string
+      - "null"
+    description: The cursor for retrieving the next page, or `null` if no more results are available.

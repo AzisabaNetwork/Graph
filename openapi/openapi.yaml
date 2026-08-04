@@ -11,7 +11,7 @@ servers:
   - url: "https://graph.azisaba.net"
 
 security:
-  - ApiKeyAuth: [ ]
+  - apiKeyAuth: [ ]
 
 tags:
   - name: api-keys
