@@ -1,4 +1,5 @@
 mod api_keys;
+mod crawls;
 mod patch_notes;
 mod players;
 mod punishments;
@@ -119,6 +120,13 @@ pub(crate) fn non_empty_env(key: &str) -> Option<String> {
 
 pub(crate) fn into_nullable<T>(value: Option<T>) -> Nullable<T> {
     value.map_or(Nullable::Null, Nullable::Present)
+}
+
+pub(crate) fn from_nullable<T>(value: &Nullable<T>) -> Option<&T> {
+    match value {
+        Nullable::Present(value) => Some(value),
+        Nullable::Null => None,
+    }
 }
 
 #[async_trait::async_trait]

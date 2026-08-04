@@ -1,4 +1,4 @@
-use crate::api::{Api, into_nullable};
+use crate::api::{Api, from_nullable, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::mojang::PlayerDbError;
 use crate::pagination::Cursor;
@@ -292,7 +292,7 @@ impl Players<String> for Api {
         if let Some(discord_id) = &body.discord_id {
             updates
                 .push("discord_id = ")
-                .push_bind_unseparated(nullable_ref(discord_id));
+                .push_bind_unseparated(from_nullable(discord_id));
         }
         if let Some(status) = status {
             updates.push("status = ").push_bind_unseparated(status);
@@ -300,12 +300,12 @@ impl Players<String> for Api {
         if let Some(current_server) = &body.current_server {
             updates
                 .push("current_server = ")
-                .push_bind_unseparated(nullable_ref(current_server));
+                .push_bind_unseparated(from_nullable(current_server));
         }
         if let Some(bio) = &body.bio {
             updates
                 .push("bio = ")
-                .push_bind_unseparated(nullable_ref(bio));
+                .push_bind_unseparated(from_nullable(bio));
         }
         query.push(" WHERE id = ").push_bind(path_params.player_id);
 
@@ -333,13 +333,6 @@ impl Players<String> for Api {
                 record.into_list_item(username, can_read_discord_id(api_key)),
             ),
         )
-    }
-}
-
-fn nullable_ref(value: &graph_api::types::Nullable<String>) -> Option<&str> {
-    match value {
-        graph_api::types::Nullable::Present(value) => Some(value),
-        graph_api::types::Nullable::Null => None,
     }
 }
 
