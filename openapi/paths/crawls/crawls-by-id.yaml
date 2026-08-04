@@ -1,0 +1,43 @@
+get:
+  summary: Get a crawl by ID
+  operationId: getCrawlById
+  tags:
+    - crawls
+  security:
+    - apiKeyAuth:
+        - crawls:read
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/CrawlId"
+  responses:
+    "200":
+      description: The crawl was retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Crawl"
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The crawl was not found.
+
+delete:
+  summary: Delete a crawl by ID
+  operationId: deleteCrawlById
+  tags:
+    - crawls
+  security:
+    - apiKeyAuth:
+        - crawls:write
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/CrawlId"
+  responses:
+    "204":
+      description: The crawl was deleted successfully.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The crawl was not found.

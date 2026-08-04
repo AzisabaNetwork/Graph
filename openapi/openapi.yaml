@@ -30,6 +30,10 @@ paths:
     $ref: "./paths/api-keys/api-keys.yaml"
   /api-keys/{apiKeyId}:
     $ref: "./paths/api-keys/api-keys-by-id.yaml"
+  /crawls:
+    $ref: "./paths/crawls/crawls.yaml"
+  /crawls/{crawlId}:
+    $ref: "./paths/crawls/crawls-by-id.yaml"
   /patch-notes:
     $ref: "./paths/patch-notes/patch-notes.yaml"
   /patch-notes/{patchNoteId}:
@@ -51,6 +55,8 @@ components:
   parameters:
     ApiKeyId:
       $ref: "./components/parameters/api-key-id.yaml"
+    CrawlId:
+      $ref: "./components/parameters/crawl-id.yaml"
     PatchNoteId:
       $ref: "./components/parameters/patch-note-id.yaml"
     PlayerId:
@@ -79,6 +85,8 @@ components:
       $ref: "./components/schemas/create-api-key-request.yaml"
     CreateApiKeyResponse:
       $ref: "./components/schemas/create-api-key-response.yaml"
+    CreateCrawlRequest:
+      $ref: "./components/schemas/create-crawl-request.yaml"
     CreatePatchNoteRequest:
       $ref: "./components/schemas/create-patch-note-request.yaml"
     CreateProofRequest:
@@ -87,6 +95,8 @@ components:
       $ref: "./components/schemas/create-punishment-request.yaml"
     ListApiKeysResponse:
       $ref: "./components/schemas/list-api-key-response.yaml"
+    ListCrawlsResponse:
+      $ref: "./components/schemas/list-crawls-response.yaml"
     ListPatchNotesResponse:
       $ref: "./components/schemas/list-patch-notes-response.yaml"
     ListPlayersResponse:

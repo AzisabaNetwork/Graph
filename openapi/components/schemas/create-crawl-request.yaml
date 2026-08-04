@@ -1,0 +1,38 @@
+type: object
+required:
+  - address
+  - port
+  - ping
+  - version
+  - protocolVersion
+  - maxPlayers
+  - onlinePlayers
+  - favicon
+  - crawledAt
+properties:
+  address:
+    $ref: "./crawl.yaml#/properties/address"
+
+  port:
+    $ref: "./crawl.yaml#/properties/port"
+
+  ping:
+    $ref: "./crawl.yaml#/properties/ping"
+
+  version:
+    $ref: "./crawl.yaml#/properties/version"
+
+  protocolVersion:
+    $ref: "./crawl.yaml#/properties/protocolVersion"
+
+  maxPlayers:
+    $ref: "./crawl.yaml#/properties/maxPlayers"
+
+  onlinePlayers:
+    $ref: "./crawl.yaml#/properties/onlinePlayers"
+
+  favicon:
+    $ref: "./crawl.yaml#/properties/favicon"
+
+  crawledAt:
+    $ref: "./crawl.yaml#/properties/crawledAt"
