@@ -31,6 +31,9 @@ properties:
   onlinePlayers:
     $ref: "./crawl.yaml#/properties/onlinePlayers"
 
+  description:
+    $ref: "./crawl.yaml#/properties/description"
+
   favicon:
     $ref: "./crawl.yaml#/properties/favicon"
 

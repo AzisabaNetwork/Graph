@@ -84,8 +84,8 @@ impl Crawls<String> for Api {
             r#"
             INSERT INTO crawls
                 (id, address, port, ping, version, protocol_version, max_players,
-                 online_players, favicon, crawled_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 online_players, description, favicon, crawled_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(id)
@@ -96,28 +96,28 @@ impl Crawls<String> for Api {
         .bind(body.protocol_version)
         .bind(body.max_players)
         .bind(body.online_players)
+        .bind(&body.description)
         .bind(favicon)
         .bind(body.crawled_at)
         .execute(&self.pool)
         .await
         .map_err(log_database_error)?;
 
-        Ok(
-            CreateCrawlResponse::Status201_TheCrawlWasCreatedSuccessfully(
-                ListCrawls200ResponseItemsInner::new(
-                    id,
-                    body.address.clone(),
-                    body.port,
-                    body.ping,
-                    body.version.clone(),
-                    body.protocol_version,
-                    body.max_players,
-                    body.online_players,
-                    body.favicon.clone(),
-                    body.crawled_at,
-                ),
-            ),
-        )
+        let mut crawl = ListCrawls200ResponseItemsInner::new(
+            id,
+            body.address.clone(),
+            body.port,
+            body.ping,
+            body.version.clone(),
+            body.protocol_version,
+            body.max_players,
+            body.online_players,
+            body.favicon.clone(),
+            body.crawled_at,
+        );
+        crawl.description = body.description.clone();
+
+        Ok(CreateCrawlResponse::Status201_TheCrawlWasCreatedSuccessfully(crawl))
     }
 
     async fn delete_crawl_by_id(
