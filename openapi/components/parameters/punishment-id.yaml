@@ -1,5 +1,6 @@
 name: punishmentId
 in: path
 required: true
+description: The public identifier of the punishment.
 schema:
   $ref: "../../openapi.yaml#/components/schemas/PunishmentId"
