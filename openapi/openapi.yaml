@@ -16,6 +16,8 @@ security:
 tags:
   - name: api-keys
     description: Operations related to API keys.
+  - name: crawls
+    description: Operations related to crawls.
   - name: patch-notes
     description: Operations related to patch notes.
   - name: players
@@ -69,6 +71,10 @@ components:
       $ref: "./components/schemas/api-key.yaml"
     ApiKeyScope:
       $ref: "./components/schemas/api-key-scope.yaml"
+    Crawl:
+      $ref: "./components/schemas/crawl.yaml"
+    CrawlId:
+      $ref: "./components/schemas/crawl-id.yaml"
     CreateApiKeyRequest:
       $ref: "./components/schemas/create-api-key-request.yaml"
     CreateApiKeyResponse:
