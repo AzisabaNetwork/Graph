@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: publish-rust-sdk
@@ -68,8 +69,12 @@ jobs:
         working-directory: sdks/rust/generated
         run: cargo publish --dry-run
 
+      - name: Authenticate with crates.io
+        id: crates_io_auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Publish package
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
         working-directory: sdks/rust/generated
         run: cargo publish
