@@ -52,6 +52,12 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: pnpm generate:rust-sdk --additional-properties packageVersion="$VERSION"
 
+      - name: Validate package metadata
+        working-directory: sdks/rust/generated
+        run: |
+          test "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].license')" = "MIT"
+          test "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" = "${{ inputs.version }}"
+
       - name: Build and test Rust SDK
         working-directory: sdks/rust/generated
         run: |

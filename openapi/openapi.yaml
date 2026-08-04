@@ -2,9 +2,10 @@ openapi: 3.1.0
 
 info:
   title: Azisaba Graph API
+  description: An API for connecting and sharing data across Azisaba Network.
   version: 0.0.1
   license:
-    name: MIT License
+    name: MIT
     identifier: MIT
 
 servers:
