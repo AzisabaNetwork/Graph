@@ -131,5 +131,5 @@ components:
       $ref: "./components/schemas/update-punishment-request.yaml"
 
   securitySchemes:
-    ApiKeyAuth:
+    apiKeyAuth:
       $ref: "./components/security-schemes/api-key-auth.yaml"

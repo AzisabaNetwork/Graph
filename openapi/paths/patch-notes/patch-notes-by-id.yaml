@@ -4,7 +4,7 @@ get:
   tags:
     - patch-notes
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - patch-notes:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PatchNoteId"
@@ -28,7 +28,7 @@ delete:
   tags:
     - patch-notes
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - patch-notes:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PatchNoteId"

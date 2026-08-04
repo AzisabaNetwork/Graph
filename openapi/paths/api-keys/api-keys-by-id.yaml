@@ -4,7 +4,7 @@ get:
   tags:
     - api-keys
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - api-keys:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
@@ -28,7 +28,7 @@ patch:
   tags:
     - api-keys
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - api-keys:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"
@@ -60,7 +60,7 @@ delete:
   tags:
     - api-keys
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - api-keys:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/ApiKeyId"

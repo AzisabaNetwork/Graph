@@ -5,9 +5,9 @@ get:
   tags:
     - players
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - players:read
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - players:read-details
   parameters:
     - name: limit

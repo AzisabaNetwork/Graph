@@ -4,7 +4,7 @@ get:
   tags:
     - api-keys
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - api-keys:read
   parameters:
     - name: limit
@@ -41,7 +41,7 @@ post:
   tags:
     - api-keys
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - api-keys:write
   requestBody:
     required: true

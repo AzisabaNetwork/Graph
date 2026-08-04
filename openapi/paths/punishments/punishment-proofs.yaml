@@ -4,7 +4,7 @@ get:
   tags:
     - punishments
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - punishments:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
@@ -30,7 +30,7 @@ post:
   tags:
     - punishments
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"

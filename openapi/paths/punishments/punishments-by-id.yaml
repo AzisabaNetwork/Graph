@@ -4,7 +4,7 @@ get:
   tags:
     - punishments
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - punishments:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
@@ -28,7 +28,7 @@ patch:
   tags:
     - punishments
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
@@ -60,7 +60,7 @@ delete:
   tags:
     - punishments
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - punishments:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"

@@ -4,7 +4,7 @@ get:
   tags:
     - patch-notes
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - patch-notes:read
   parameters:
     - name: limit
@@ -53,7 +53,7 @@ post:
   tags:
     - patch-notes
   security:
-    - ApiKeyAuth:
+    - apiKeyAuth:
         - patch-notes:write
   requestBody:
     required: true
