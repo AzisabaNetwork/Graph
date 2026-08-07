@@ -1,0 +1,53 @@
+post:
+  summary: Add a friend
+  description: Adds a player as a friend.
+  operationId: addPlayerFriend
+  tags:
+    - players
+  security:
+    - apiKeyAuth:
+        - players:write
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+    - $ref: "../../openapi.yaml#/components/parameters/FriendId"
+  responses:
+    "201":
+      description: The friend was added successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/Player"
+    "400":
+      description: The request contains invalid parameters.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The player or friend was not found.
+    "409":
+      description: The player is already friends with the specified player.
+
+delete:
+  summary: Remove a friend
+  description: Removes a friend from the player's friends.
+  operationId: removePlayerFriend
+  tags:
+    - players
+  security:
+    - apiKeyAuth:
+        - players:write
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+    - $ref: "../../openapi.yaml#/components/parameters/FriendId"
+  responses:
+    "204":
+      description: The friend was removed successfully.
+    "400":
+      description: The request contains invalid parameters.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The player or friend was not found.

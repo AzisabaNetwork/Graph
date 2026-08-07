@@ -43,6 +43,10 @@ paths:
     $ref: "./paths/players/players.yaml"
   /players/{playerId}:
     $ref: "./paths/players/players-by-id.yaml"
+  /players/{playerId}/friends:
+    $ref: "./paths/players/players-by-id-friends.yaml"
+  /players/{playerId}/friends/{friendId}:
+    $ref: "./paths/players/players-by-id-friends-by-id.yaml"
   /punishments:
     $ref: "./paths/punishments/punishments.yaml"
   /punishments/{punishmentId}:
@@ -58,6 +62,8 @@ components:
       $ref: "./components/parameters/api-key-id.yaml"
     CrawlId:
       $ref: "./components/parameters/crawl-id.yaml"
+    FriendId:
+      $ref: "./components/parameters/friend-id.yaml"
     PatchNoteId:
       $ref: "./components/parameters/patch-note-id.yaml"
     PlayerId:

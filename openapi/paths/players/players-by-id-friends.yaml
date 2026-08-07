@@ -1,0 +1,24 @@
+get:
+  summary: List player friends
+  description: Returns the friends of a player.
+  operationId: listPlayerFriends
+  tags:
+    - players
+  security:
+    - apiKeyAuth:
+        - players:read
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+  responses:
+    "200":
+      description: The player's friends were retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/ListPlayersResponse"
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The player was not found.

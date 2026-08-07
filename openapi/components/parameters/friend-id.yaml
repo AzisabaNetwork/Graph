@@ -1,0 +1,6 @@
+name: friendId
+in: path
+required: true
+description: The unique identifier of the friend player.
+schema:
+  $ref: "../../openapi.yaml#/components/schemas/PlayerId"
