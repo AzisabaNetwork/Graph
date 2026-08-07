@@ -86,7 +86,7 @@ impl PatchNotes<String> for Api {
             Ok(request) => request,
             Err(error) => {
                 tracing::error!(%error, "invalid create patch note multipart body");
-                return Ok(CreatePatchNoteResponse::Status400_TheRequestBodyIsInvalid);
+                return Ok(CreatePatchNoteResponse::Status400_TheRequestIsInvalid);
             }
         };
 
@@ -351,7 +351,7 @@ impl PatchNotes<String> for Api {
                 Some(target) => match PatchNoteTarget::from_str(target) {
                     Ok(target) => Some(target.to_string()),
                     Err(_) => return Ok(
-                        ListPatchNotesResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListPatchNotesResponse::Status400_TheRequestIsInvalid,
                     ),
                 },
                 None => None,
@@ -362,7 +362,7 @@ impl PatchNotes<String> for Api {
                 Some(category) => match PatchNoteCategory::from_str(category) {
                     Ok(category) => Some(category.to_string()),
                     Err(_) => return Ok(
-                        ListPatchNotesResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListPatchNotesResponse::Status400_TheRequestIsInvalid,
                     ),
                 },
                 None => None,
@@ -373,7 +373,7 @@ impl PatchNotes<String> for Api {
                 Some(cursor) => match PatchNoteCursor::decode(cursor) {
                     Ok(cursor) => Some(cursor),
                     Err(_) => return Ok(
-                        ListPatchNotesResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListPatchNotesResponse::Status400_TheRequestIsInvalid,
                     ),
                 },
                 None => None,

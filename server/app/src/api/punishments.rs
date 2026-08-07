@@ -434,17 +434,17 @@ impl Punishments<String> for Api {
             );
         };
         let Some(kind) = StoredPunishmentType::from_api(&body.r_type) else {
-            return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreatePunishmentResponse::Status400_TheRequestIsInvalid);
         };
         let now = Utc::now();
         let Some(end) = end_millis(kind, &body.expires_at, now) else {
-            return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreatePunishmentResponse::Status400_TheRequestIsInvalid);
         };
         let Some(target) = normalize_target(kind, &body.target) else {
-            return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreatePunishmentResponse::Status400_TheRequestIsInvalid);
         };
         if !non_empty(&body.target_name) || !non_empty(&body.reason) || !non_empty(&body.server) {
-            return Ok(CreatePunishmentResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreatePunishmentResponse::Status400_TheRequestIsInvalid);
         }
         let server = body.server.to_lowercase();
         let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
@@ -515,14 +515,14 @@ impl Punishments<String> for Api {
         }
         let limit = query.limit.unwrap_or(DEFAULT_LIMIT);
         if !(1..=MAX_LIMIT).contains(&limit) {
-            return Ok(graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestContainsInvalidQueryParameters);
+            return Ok(graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestIsInvalid);
         }
         let kind =
             match query.r#type.as_deref() {
                 Some(value) => match StoredPunishmentType::from_api(value) {
                     Some(kind) => Some(kind),
                     None => return Ok(
-                        graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestIsInvalid,
                     ),
                 },
                 None => None,
@@ -532,7 +532,7 @@ impl Punishments<String> for Api {
                 Some(value) => match PunishmentCursor::decode(value) {
                     Ok(cursor) => Some(cursor),
                     Err(_) => return Ok(
-                        graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestIsInvalid,
                     ),
                 },
                 None => None,
@@ -625,7 +625,7 @@ impl Punishments<String> for Api {
                 .as_deref()
                 .is_some_and(|reason| !non_empty(reason))
         {
-            return Ok(UpdatePunishmentByIdResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(UpdatePunishmentByIdResponse::Status400_TheRequestIsInvalid);
         }
         let Ok(id) = i64::try_from(path.punishment_id) else {
             return Ok(UpdatePunishmentByIdResponse::Status404_TheActivePunishmentWasNotFound);
@@ -690,7 +690,7 @@ impl Punishments<String> for Api {
             );
         };
         if !non_empty(&body.reason) {
-            return Ok(DeletePunishmentByIdResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(DeletePunishmentByIdResponse::Status400_TheRequestIsInvalid);
         }
         let Ok(id) = i64::try_from(path.punishment_id) else {
             return Ok(DeletePunishmentByIdResponse::Status404_TheActivePunishmentWasNotFound);
@@ -766,7 +766,7 @@ impl Punishments<String> for Api {
             return Ok(CreatePunishmentProofResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
         if !non_empty(&body.text) {
-            return Ok(CreatePunishmentProofResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreatePunishmentProofResponse::Status400_TheRequestIsInvalid);
         }
         let Ok(id) = i64::try_from(path.punishment_id) else {
             return Ok(CreatePunishmentProofResponse::Status404_TheActivePunishmentWasNotFound);
@@ -839,7 +839,7 @@ impl Punishments<String> for Api {
         if body.text.is_none() && body.public.is_none()
             || body.text.as_deref().is_some_and(|text| !non_empty(text))
         {
-            return Ok(UpdatePunishmentProofByIdResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(UpdatePunishmentProofByIdResponse::Status400_TheRequestIsInvalid);
         }
         let (Ok(punishment_id), Ok(proof_id)) = (
             i64::try_from(path.punishment_id),

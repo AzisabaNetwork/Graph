@@ -75,7 +75,7 @@ impl Crawls<String> for Api {
             || body.port == 0
             || !valid_favicon(&body.favicon)
         {
-            return Ok(CreateCrawlResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreateCrawlResponse::Status400_TheRequestIsInvalid);
         }
 
         let id = Uuid::new_v4();
@@ -207,7 +207,7 @@ impl Crawls<String> for Api {
                 (Some(from), Some(to)) if from >= to
             )
         {
-            return Ok(ListCrawlsResponse::Status400_TheRequestContainsInvalidQueryParameters);
+            return Ok(ListCrawlsResponse::Status400_TheRequestIsInvalid);
         }
         let limit = limit as usize;
 
@@ -216,7 +216,7 @@ impl Crawls<String> for Api {
                 Ok(cursor) => Some(cursor),
                 Err(_) => {
                     return Ok(
-                        ListCrawlsResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListCrawlsResponse::Status400_TheRequestIsInvalid,
                     );
                 }
             },

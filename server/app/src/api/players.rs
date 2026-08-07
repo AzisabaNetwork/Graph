@@ -121,7 +121,7 @@ impl Players<String> for Api {
 
         let limit = query_params.limit.unwrap_or(DEFAULT_PLAYERS_LIMIT);
         if !(1..=MAX_PLAYERS_LIMIT).contains(&limit) {
-            return Ok(ListPlayersResponse::Status400_TheRequestContainsInvalidQueryParameters);
+            return Ok(ListPlayersResponse::Status400_TheRequestIsInvalid);
         }
         let limit = limit as usize;
 
@@ -130,12 +130,12 @@ impl Players<String> for Api {
                 Ok(cursor) if cursor.value == cursor.tie_breaker => Some(cursor),
                 Err(_) => {
                     return Ok(
-                        ListPlayersResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListPlayersResponse::Status400_TheRequestIsInvalid,
                     );
                 }
                 Ok(_) => {
                     return Ok(
-                        ListPlayersResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListPlayersResponse::Status400_TheRequestIsInvalid,
                     );
                 }
             },
@@ -146,7 +146,7 @@ impl Players<String> for Api {
                 Ok(status) => Some(status.to_string()),
                 Err(_) => {
                     return Ok(
-                        ListPlayersResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListPlayersResponse::Status400_TheRequestIsInvalid,
                     );
                 }
             },
@@ -252,13 +252,13 @@ impl Players<String> for Api {
             && body.current_server.is_none()
             && body.bio.is_none()
         {
-            return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(UpdatePlayerByIdResponse::Status400_TheRequestIsInvalid);
         }
         let status = match &body.status {
             Some(status) => match PlayerStatus::from_str(status) {
                 Ok(status) => Some(status.to_string()),
                 Err(_) => {
-                    return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
+                    return Ok(UpdatePlayerByIdResponse::Status400_TheRequestIsInvalid);
                 }
             },
             None => None,
@@ -267,7 +267,7 @@ impl Players<String> for Api {
             matches!(bio, graph_api::types::Nullable::Present(bio) if !(1..=160).contains(&bio.chars().count()))
         })
         {
-            return Ok(UpdatePlayerByIdResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(UpdatePlayerByIdResponse::Status400_TheRequestIsInvalid);
         }
 
         let Some(username) = self

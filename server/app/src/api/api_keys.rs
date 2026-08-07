@@ -76,12 +76,12 @@ impl ApiKeys<String> for Api {
         }
 
         if !(1..=100).contains(&body.name.chars().count()) {
-            return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreateApiKeyResponse::Status400_TheRequestIsInvalid);
         }
 
         let requested_scopes = match parse_api_key_scopes(&body.scopes) {
             Some(scopes) => scopes,
-            None => return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid),
+            None => return Ok(CreateApiKeyResponse::Status400_TheRequestIsInvalid),
         };
         if !api_key.has_all_scopes(&requested_scopes) {
             return Ok(CreateApiKeyResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
@@ -112,7 +112,7 @@ impl ApiKeys<String> for Api {
                 graph_api::types::Nullable::Null => None,
             });
         if expires_at.is_some_and(|expires_at| expires_at <= created_at) {
-            return Ok(CreateApiKeyResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(CreateApiKeyResponse::Status400_TheRequestIsInvalid);
         }
 
         let credentials = ApiKeyCredentials::generate().map_err(|error| {
@@ -262,7 +262,7 @@ impl ApiKeys<String> for Api {
 
         let limit = query_params.limit.unwrap_or(DEFAULT_API_KEYS_LIMIT);
         if !(1..=MAX_API_KEYS_LIMIT).contains(&limit) {
-            return Ok(ListApiKeysResponse::Status400_TheRequestContainsInvalidQueryParameters);
+            return Ok(ListApiKeysResponse::Status400_TheRequestIsInvalid);
         }
         let limit = limit as usize;
         let cursor = match query_params.cursor.as_deref() {
@@ -270,7 +270,7 @@ impl ApiKeys<String> for Api {
                 Ok(cursor) => Some(cursor),
                 Err(_) => {
                     return Ok(
-                        ListApiKeysResponse::Status400_TheRequestContainsInvalidQueryParameters,
+                        ListApiKeysResponse::Status400_TheRequestIsInvalid,
                     );
                 }
             },
@@ -355,13 +355,13 @@ impl ApiKeys<String> for Api {
             .as_ref()
             .is_some_and(|name| !(1..=100).contains(&name.chars().count()))
         {
-            return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestBodyIsInvalid);
+            return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestIsInvalid);
         }
 
         let requested_scopes = match body.scopes.as_ref() {
             Some(scopes) => {
                 let Some(scopes) = parse_api_key_scopes(scopes) else {
-                    return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestBodyIsInvalid);
+                    return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestIsInvalid);
                 };
 
                 if !api_key.has_all_scopes(&scopes) {
