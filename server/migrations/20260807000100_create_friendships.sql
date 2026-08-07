@@ -5,15 +5,7 @@ CREATE TABLE friendships (
     PRIMARY KEY (player1_id, player2_id),
     CONSTRAINT friendships_player_order_check CHECK (
         player1_id < player2_id
-    ),
-    CONSTRAINT friendships_player1_fk
-         FOREIGN KEY (player1_id)
-         REFERENCES players(id)
-         ON DELETE CASCADE,
-    CONSTRAINT friendships_player2_fk
-         FOREIGN KEY (player2_id)
-         REFERENCES players(id)
-         ON DELETE CASCADE
+    )
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
