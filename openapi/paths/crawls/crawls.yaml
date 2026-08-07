@@ -67,7 +67,7 @@ get:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/ListCrawlsResponse"
     "400":
-      description: The request contains invalid query parameters.
+      $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
@@ -95,7 +95,7 @@ post:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Crawl"
     "400":
-      description: The request body is invalid.
+      $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":

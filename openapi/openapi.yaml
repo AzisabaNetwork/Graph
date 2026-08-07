@@ -74,10 +74,12 @@ components:
       $ref: "./components/parameters/punishment-id.yaml"
 
   responses:
-    Unauthorized:
-      $ref: "./components/responses/unauthorized.yaml"
+    BadRequest:
+      $ref: "./components/responses/bad-request.yaml"
     Forbidden:
       $ref: "./components/responses/forbidden.yaml"
+    Unauthorized:
+      $ref: "./components/responses/unauthorized.yaml"
 
   schemas:
     ApiKey:

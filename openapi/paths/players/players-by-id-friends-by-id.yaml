@@ -18,7 +18,7 @@ post:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Player"
     "400":
-      description: The request contains invalid parameters.
+      $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
@@ -44,7 +44,7 @@ delete:
     "204":
       description: The friend was removed successfully.
     "400":
-      description: The request contains invalid parameters.
+      $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":

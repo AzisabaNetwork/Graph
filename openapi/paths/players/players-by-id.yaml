@@ -49,7 +49,7 @@ patch:
           schema:
             $ref: "../../openapi.yaml#/components/schemas/Player"
     "400":
-      description: The request body is invalid.
+      $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
