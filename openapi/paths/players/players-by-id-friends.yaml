@@ -9,6 +9,21 @@ get:
         - players:read
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+
+    - name: limit
+      in: query
+      description: The maximum number of friends to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    - name: cursor
+      in: query
+      description: The cursor returned by the previous request.
+      schema:
+        type: string
   responses:
     "200":
       description: The player's friends were retrieved successfully.
