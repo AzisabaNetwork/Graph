@@ -5,12 +5,14 @@ use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
 use graph_api::apis::players::{
-    GetPlayerByIdResponse, ListPlayersResponse, Players, UpdatePlayerByIdResponse,
+    AddPlayerFriendResponse, GetPlayerByIdResponse, ListPlayerFriendsResponse, ListPlayersResponse,
+    Players, RemovePlayerFriendResponse, UpdatePlayerByIdResponse,
 };
 use graph_api::models::{
-    ApiKey, ApiKeyScope, GetPlayerByIdPathParams, ListPlayers200Response,
+    AddPlayerFriendPathParams, ApiKey, ApiKeyScope, GetPlayerByIdPathParams,
+    ListPlayerFriendsPathParams, ListPlayerFriendsQueryParams, ListPlayers200Response,
     ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
-    UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
+    RemovePlayerFriendPathParams, UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
 };
 use headers::Host;
 use http::Method;
@@ -62,6 +64,85 @@ impl PlayerRecord {
 impl Players<String> for Api {
     type Claims = ApiKey;
 
+    async fn add_player_friend(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &AddPlayerFriendPathParams,
+    ) -> Result<AddPlayerFriendResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
+            return Ok(
+                AddPlayerFriendResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
+        if path_params.player_id == path_params.friend_id {
+            return Ok(AddPlayerFriendResponse::Status400_TheRequestIsInvalid);
+        }
+
+        let Some(_) = self
+            .player_db
+            .get_username_by_uuid(path_params.friend_id)
+            .await?
+        else {
+            return Ok(AddPlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
+        };
+
+        let (player1_id, player2_id) =
+            normalize_friendship(path_params.player_id, path_params.friend_id);
+
+        match sqlx::query(
+            r#"
+            INSERT INTO friendships (player1_id, player2_id)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind(player1_id)
+        .bind(player2_id)
+        .execute(&self.pool)
+        .await
+        {
+            Ok(_) => {}
+            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => return Ok(
+                AddPlayerFriendResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSpecifiedPlayer,
+            ),
+            Err(error) => return Err(log_database_error(error)),
+        }
+
+        let record = sqlx::query_as::<_, PlayerRecord>(
+            r#"
+            SELECT id, discord_id, status, current_server, bio
+            FROM players
+            WHERE id = ?
+            "#,
+        )
+        .bind(path_params.friend_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(log_database_error)?
+        .unwrap_or(PlayerRecord {
+            id: path_params.friend_id,
+            discord_id: None,
+            status: "offline".to_string(),
+            current_server: None,
+            bio: None,
+        });
+
+        let username = self
+            .player_db
+            .get_username_by_uuid(record.id)
+            .await?
+            .ok_or_else(|| "PlayerDB profile not found".to_string())?;
+
+        Ok(
+            AddPlayerFriendResponse::Status201_TheFriendWasAddedSuccessfully(
+                record.into_list_item(username, can_read_discord_id(api_key)),
+            ),
+        )
+    }
+
     async fn get_player_by_id(
         &self,
         _method: &Method,
@@ -102,6 +183,139 @@ impl Players<String> for Api {
         )
     }
 
+    async fn list_player_friends(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &ListPlayerFriendsPathParams,
+        query_params: &ListPlayerFriendsQueryParams,
+    ) -> Result<ListPlayerFriendsResponse, String> {
+        if !can_read_players(api_key) {
+            return Ok(
+                ListPlayerFriendsResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
+        let limit = query_params.limit.unwrap_or(DEFAULT_PLAYERS_LIMIT);
+
+        if !(1..=MAX_PLAYERS_LIMIT).contains(&limit) {
+            return Ok(ListPlayerFriendsResponse::Status400_TheRequestIsInvalid);
+        }
+
+        let limit = limit as usize;
+
+        let cursor = match query_params.cursor.as_deref() {
+            Some(cursor) => match PlayerCursor::decode(cursor) {
+                Ok(cursor) if cursor.value == cursor.tie_breaker => Some(cursor),
+                _ => {
+                    return Ok(ListPlayerFriendsResponse::Status400_TheRequestIsInvalid);
+                }
+            },
+            None => None,
+        };
+
+        let mut query = QueryBuilder::<MySql>::new(
+            r#"
+            SELECT
+                p.id,
+                p.discord_id,
+                p.status,
+                p.current_server,
+                p.bio
+            FROM friendships f
+            JOIN players p
+                ON (
+                    (f.player1_id =
+            "#,
+        );
+
+        query
+            .push_bind(path_params.player_id)
+            .push(" AND p.id = f.player2_id) OR (f.player2_id = ")
+            .push_bind(path_params.player_id)
+            .push(" AND p.id = f.player1_id)")
+            .push(" WHERE 1 = 1");
+
+        if let Some(cursor) = cursor {
+            query.push(" AND p.id > ").push_bind(cursor.value);
+        }
+
+        query
+            .push(" ORDER BY p.id ASC LIMIT ")
+            .push_bind((limit + 1) as u64);
+
+        let mut rows = query
+            .build_query_as::<PlayerRecord>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(log_database_error)?;
+
+        let next_cursor = if rows.len() > limit {
+            rows.pop();
+
+            let last = rows.last().expect("page must include at least one row");
+
+            Some(
+                PlayerCursor {
+                    value: last.id,
+                    tie_breaker: last.id,
+                }
+                .encode()
+                .map_err(|error| {
+                    tracing::error!(?error, "failed to encode player friends cursor");
+                    "failed to encode player friends cursor".to_string()
+                })?,
+            )
+        } else {
+            None
+        };
+
+        let mut tasks = JoinSet::new();
+
+        let mut items = std::iter::repeat_with(|| None)
+            .take(rows.len())
+            .collect::<Vec<_>>();
+
+        for (index, record) in rows.into_iter().enumerate() {
+            let player_db = self.player_db.clone();
+
+            tasks.spawn(async move {
+                let username = player_db.get_username_by_uuid(record.id).await?;
+
+                Ok::<_, PlayerDbError>((index, record, username))
+            });
+        }
+
+        while let Some(result) = tasks.join_next().await {
+            let (index, record, username) = result
+                .map_err(|error| format!("PlayerDB lookup task failed: {error}"))?
+                .map_err(|error| {
+                    tracing::error!(%error, "PlayerDB profile lookup failed");
+                    error.to_string()
+                })?;
+
+            let username = username.ok_or_else(|| {
+                format!(
+                    "PlayerDB profile was not found for tracked player {}",
+                    record.id
+                )
+            })?;
+
+            items[index] = Some(record.into_list_item(username, can_read_discord_id(api_key)));
+        }
+
+        let items = items
+            .into_iter()
+            .map(|player| player.expect("every PlayerDB lookup task must produce a player"))
+            .collect();
+
+        Ok(ListPlayerFriendsResponse::Status200_ThePlayer(
+            ListPlayers200Response::new(items, into_nullable(next_cursor)),
+        ))
+    }
+
     async fn list_players(
         &self,
         _method: &Method,
@@ -129,14 +343,10 @@ impl Players<String> for Api {
             Some(cursor) => match PlayerCursor::decode(cursor) {
                 Ok(cursor) if cursor.value == cursor.tie_breaker => Some(cursor),
                 Err(_) => {
-                    return Ok(
-                        ListPlayersResponse::Status400_TheRequestIsInvalid,
-                    );
+                    return Ok(ListPlayersResponse::Status400_TheRequestIsInvalid);
                 }
                 Ok(_) => {
-                    return Ok(
-                        ListPlayersResponse::Status400_TheRequestIsInvalid,
-                    );
+                    return Ok(ListPlayersResponse::Status400_TheRequestIsInvalid);
                 }
             },
             None => None,
@@ -145,9 +355,7 @@ impl Players<String> for Api {
             Some(status) => match PlayerStatus::from_str(status) {
                 Ok(status) => Some(status.to_string()),
                 Err(_) => {
-                    return Ok(
-                        ListPlayersResponse::Status400_TheRequestIsInvalid,
-                    );
+                    return Ok(ListPlayersResponse::Status400_TheRequestIsInvalid);
                 }
             },
             None => None,
@@ -230,6 +438,43 @@ impl Players<String> for Api {
                 ListPlayers200Response::new(items, into_nullable(next_cursor)),
             ),
         )
+    }
+
+    async fn remove_player_friend(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &RemovePlayerFriendPathParams,
+    ) -> Result<RemovePlayerFriendResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
+            return Ok(
+                RemovePlayerFriendResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
+        let (player1_id, player2_id) =
+            normalize_friendship(path_params.player_id, path_params.friend_id);
+
+        let result = sqlx::query(
+            r#"
+            DELETE FROM friendships
+            WHERE player1_id = ?
+              AND player2_id = ?
+            "#,
+        )
+        .bind(player1_id)
+        .bind(player2_id)
+        .execute(&self.pool)
+        .await
+        .map_err(log_database_error)?;
+
+        if result.rows_affected() == 0 {
+            return Ok(RemovePlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
+        }
+
+        Ok(RemovePlayerFriendResponse::Status204_TheFriendWasRemovedSuccessfully)
     }
 
     async fn update_player_by_id(
@@ -343,6 +588,10 @@ fn can_read_players(api_key: &ApiKey) -> bool {
 
 fn can_read_discord_id(api_key: &ApiKey) -> bool {
     api_key.has_scope(&ApiKeyScope::PlayersColonReadDetails)
+}
+
+fn normalize_friendship(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
+    if a < b { (a, b) } else { (b, a) }
 }
 
 fn log_database_error(error: sqlx::Error) -> String {
