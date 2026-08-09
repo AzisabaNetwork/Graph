@@ -1,0 +1,23 @@
+put:
+  operationId: acceptPlayerFriendRequest
+  summary: Accept player friend request
+  description: Accepts the specified sender's friend request and adds the sender to the player's friends.
+  tags:
+    - players
+  security:
+    - apiKeyAuth:
+        - players:write
+  parameters:
+    - "../../openapi.yaml#/components/parameters/PlayerId"
+    - "../../openapi.yaml#/components/parameters/PlayerFriendRequestSenderId"
+  responses:
+    "204":
+      description: The friend request was accepted successfully.
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: The player, sender, or friend request was not found.
+    "409":
+      description: The player is already friends with the sender.

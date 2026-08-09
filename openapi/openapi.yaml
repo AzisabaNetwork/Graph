@@ -47,6 +47,10 @@ paths:
     $ref: "./paths/players/players-by-id-friend-requests.yaml"
   /players/{playerId}/friend-requests/{senderId}:
     $ref: "./paths/players/players-by-id-friend-requests-by-id.yaml"
+  /players/{playerId}/friend-requests/{senderId}/accept:
+    $ref: "./paths/players/players-by-id-friend-requests-by-id-accept.yaml"
+  /players/{playerId}/friend-requests/{senderId}/reject:
+    $ref: "./paths/players/players-by-id-friend-requests-by-id-reject.yaml"
   /players/{playerId}/friends:
     $ref: "./paths/players/players-by-id-friends.yaml"
   /players/{playerId}/friends/{friendId}:
