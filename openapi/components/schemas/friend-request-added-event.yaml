@@ -11,6 +11,7 @@ properties:
     const: friend-request-added
   data:
     type: object
+    title: FriendRequestAddedEventData
     description: The data associated with the friend request.
     required:
       - sender

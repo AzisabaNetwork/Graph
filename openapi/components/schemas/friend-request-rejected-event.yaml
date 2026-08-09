@@ -11,6 +11,7 @@ properties:
     const: friend-request-rejected
   data:
     type: object
+    title: FriendRequestRejectedEventData
     description: The data associated with the friend request.
     required:
       - sender

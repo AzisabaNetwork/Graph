@@ -3,6 +3,7 @@ mod crawls;
 mod patch_notes;
 mod players;
 mod punishments;
+pub(crate) mod stream;
 
 use crate::mojang::PlayerDbClient;
 use aws_config::BehaviorVersion;
@@ -10,8 +11,10 @@ use aws_credential_types::Credentials;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::config::Region;
 use graph_api::types::Nullable;
+use redis::aio::ConnectionManager;
 use sqlx::MySqlPool;
 use std::env;
+use tokio::sync::broadcast;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Api {
@@ -19,6 +22,8 @@ pub(crate) struct Api {
     punishments_pool: MySqlPool,
     object_storage: Option<ObjectStorage>,
     player_db: PlayerDbClient,
+    redis: Option<ConnectionManager>,
+    stream_events: broadcast::Sender<graph_api::models::StreamEvent>,
 }
 
 impl Api {
@@ -28,12 +33,29 @@ impl Api {
         object_storage: Option<ObjectStorage>,
         player_db: PlayerDbClient,
     ) -> Self {
+        let (stream_events, _) = broadcast::channel(256);
         Self {
             pool,
             punishments_pool,
             object_storage,
             player_db,
+            redis: None,
+            stream_events,
         }
+    }
+
+    pub(crate) async fn new_with_redis(
+        pool: MySqlPool,
+        punishments_pool: MySqlPool,
+        object_storage: Option<ObjectStorage>,
+        player_db: PlayerDbClient,
+        redis_client: redis::Client,
+        redis: ConnectionManager,
+    ) -> redis::RedisResult<Self> {
+        let mut api = Self::new(pool, punishments_pool, object_storage, player_db);
+        api.redis = Some(redis);
+        api.start_stream_event_listener(redis_client).await?;
+        Ok(api)
     }
 
     pub(crate) fn pool(&self) -> &MySqlPool {

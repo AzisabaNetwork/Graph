@@ -6,6 +6,7 @@ mod pagination;
 use crate::api::non_empty_env;
 use api::{Api, ObjectStorage};
 use mojang::PlayerDbClient;
+use redis::aio::ConnectionManager;
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
@@ -38,12 +39,22 @@ async fn main() {
         .await
         .expect("punishments database schema is incompatible");
 
-    let api = Api::new(
+    let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
+    let redis_client = redis::Client::open(redis_url).expect("REDIS_URL must be valid");
+    let redis = ConnectionManager::new(redis_client.clone())
+        .await
+        .expect("failed to connect Redis");
+
+    let api = Api::new_with_redis(
         pool,
         punishments_pool,
         ObjectStorage::from_env().await,
         PlayerDbClient::new().expect("failed to create PlayerDB client"),
-    );
+        redis_client,
+        redis,
+    )
+    .await
+    .expect("failed to subscribe to Redis stream events");
 
     if let Some(bootstrap_api_key) = non_empty_env("GRAPH_BOOTSTRAP_API_KEY") {
         api.provision_bootstrap_api_key(&bootstrap_api_key)
@@ -57,7 +68,8 @@ async fn main() {
         .parse()
         .expect("GRAPH_SERVER_ADDR must be a valid socket address");
 
-    let app = graph_api::server::new(Arc::new(api)).layer(TraceLayer::new_for_http());
+    let api = Arc::new(api);
+    let app = graph_api::server::new(api).layer(TraceLayer::new_for_http());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind server socket");

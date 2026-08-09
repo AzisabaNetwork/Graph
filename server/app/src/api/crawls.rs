@@ -8,8 +8,8 @@ use graph_api::apis::crawls::{
     Crawls, CreateCrawlResponse, DeleteCrawlByIdResponse, GetCrawlByIdResponse, ListCrawlsResponse,
 };
 use graph_api::models::{
-    ApiKey, ApiKeyScope, CreateCrawlRequest, DeleteCrawlByIdPathParams, GetCrawlByIdPathParams,
-    ListCrawls200Response, ListCrawls200ResponseItemsInner, ListCrawlsQueryParams,
+    ApiKey, ApiKeyScope, Crawl, CreateCrawlRequest, DeleteCrawlByIdPathParams,
+    GetCrawlByIdPathParams, ListCrawls200Response, ListCrawlsQueryParams,
 };
 use graph_api::types::Nullable;
 use headers::Host;
@@ -38,8 +38,8 @@ struct CrawlRecord {
 }
 
 impl CrawlRecord {
-    fn into_list_item(self) -> ListCrawls200ResponseItemsInner {
-        ListCrawls200ResponseItemsInner {
+    fn into_list_item(self) -> Crawl {
+        Crawl {
             id: self.id,
             address: self.address,
             port: self.port,
@@ -103,7 +103,7 @@ impl Crawls<String> for Api {
         .await
         .map_err(log_database_error)?;
 
-        let mut crawl = ListCrawls200ResponseItemsInner::new(
+        let mut crawl = Crawl::new(
             id,
             body.address.clone(),
             body.port,

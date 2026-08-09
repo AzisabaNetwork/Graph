@@ -11,8 +11,8 @@ use graph_api::apis::api_keys::{
 };
 use graph_api::models::{
     ApiKey, ApiKeyScope, CreateApiKey201Response, CreateApiKeyRequest, DeleteApiKeyByIdPathParams,
-    GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeys200ResponseItemsInner,
-    ListApiKeysQueryParams, UpdateApiKeyByIdPathParams, UpdateApiKeyByIdRequest,
+    GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeysQueryParams,
+    UpdateApiKeyByIdPathParams, UpdateApiKeyByIdRequest,
 };
 use headers::Host;
 use http::Method;
@@ -34,10 +34,7 @@ struct ApiKeyRecord {
 }
 
 impl ApiKeyRecord {
-    fn into_list_item(
-        self,
-        scopes: &BTreeMap<String, Vec<String>>,
-    ) -> ListApiKeys200ResponseItemsInner {
+    fn into_list_item(self, scopes: &BTreeMap<String, Vec<String>>) -> ApiKey {
         let ApiKeyRecord {
             public_id,
             name,
@@ -48,7 +45,7 @@ impl ApiKeyRecord {
 
         let item_scopes = scopes.get(&public_id).cloned().unwrap_or_default();
 
-        ListApiKeys200ResponseItemsInner::new(
+        ApiKey::new(
             name,
             public_id,
             item_scopes,

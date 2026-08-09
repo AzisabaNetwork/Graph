@@ -13,8 +13,8 @@ use graph_api::apis::patch_notes::{
 };
 use graph_api::models::{
     ApiKey, ApiKeyScope, CreatePatchNoteRequest, DeletePatchNoteByIdPathParams,
-    GetPatchNoteByIdPathParams, ListPatchNotes200Response, ListPatchNotes200ResponseItemsInner,
-    ListPatchNotesQueryParams, PatchNoteCategory, PatchNoteTarget,
+    GetPatchNoteByIdPathParams, ListPatchNotes200Response, ListPatchNotesQueryParams, PatchNote,
+    PatchNoteCategory, PatchNoteTarget,
 };
 use graph_api::types::{ByteArray, Nullable};
 use headers::Host;
@@ -40,7 +40,7 @@ struct PatchNoteRecord {
 }
 
 impl PatchNoteRecord {
-    fn into_list_item(self, image_urls: Vec<String>) -> ListPatchNotes200ResponseItemsInner {
+    fn into_list_item(self, image_urls: Vec<String>) -> PatchNote {
         let PatchNoteRecord {
             id,
             target,
@@ -51,7 +51,7 @@ impl PatchNoteRecord {
             created_at,
         } = self;
 
-        ListPatchNotes200ResponseItemsInner::new(
+        PatchNote::new(
             id,
             target,
             category,
@@ -196,18 +196,16 @@ impl PatchNotes<String> for Api {
         })?;
 
         Ok(
-            CreatePatchNoteResponse::Status201_ThePatchNoteWasCreatedSuccessfully(
-                ListPatchNotes200ResponseItemsInner::new(
-                    id,
-                    target,
-                    category,
-                    title,
-                    body,
-                    into_nullable(author_id),
-                    image_urls,
-                    created_at,
-                ),
-            ),
+            CreatePatchNoteResponse::Status201_ThePatchNoteWasCreatedSuccessfully(PatchNote::new(
+                id,
+                target,
+                category,
+                title,
+                body,
+                into_nullable(author_id),
+                image_urls,
+                created_at,
+            )),
         )
     }
 

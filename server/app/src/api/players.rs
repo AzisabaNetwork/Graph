@@ -1,3 +1,7 @@
+use crate::api::stream::{
+    friend_request_accepted_event, friend_request_added_event, friend_request_rejected_event,
+    friend_request_removed_event,
+};
 use crate::api::{Api, from_nullable, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::mojang::PlayerDbError;
@@ -15,9 +19,9 @@ use graph_api::models::{
     AddPlayerFriendRequestPathParams, ApiKey, ApiKeyScope, GetPlayerByIdPathParams,
     ListPlayerFriendRequestsPathParams, ListPlayerFriendRequestsQueryParams,
     ListPlayerFriendsPathParams, ListPlayerFriendsQueryParams, ListPlayers200Response,
-    ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
-    RejectPlayerFriendRequestPathParams, RemovePlayerFriendPathParams,
-    RemovePlayerFriendRequestPathParams, UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
+    ListPlayersQueryParams, Player, PlayerStatus, RejectPlayerFriendRequestPathParams,
+    RemovePlayerFriendPathParams, RemovePlayerFriendRequestPathParams, UpdatePlayerByIdPathParams,
+    UpdatePlayerByIdRequest,
 };
 use headers::Host;
 use http::Method;
@@ -51,11 +55,7 @@ impl PlayerRecord {
         }
     }
 
-    fn into_list_item(
-        self,
-        username: String,
-        include_details: bool,
-    ) -> ListPlayers200ResponseItemsInner {
+    fn into_list_item(self, username: String, include_details: bool) -> Player {
         let PlayerRecord {
             id,
             discord_id,
@@ -64,7 +64,7 @@ impl PlayerRecord {
             bio,
         } = self;
 
-        ListPlayers200ResponseItemsInner::new(
+        Player::new(
             id,
             into_nullable(include_details.then_some(discord_id).flatten()),
             username,
@@ -91,11 +91,7 @@ impl Api {
         .unwrap_or_else(|| PlayerRecord::empty(id)))
     }
 
-    async fn load_player(
-        &self,
-        id: Uuid,
-        include_details: bool,
-    ) -> Result<Option<ListPlayers200ResponseItemsInner>, String> {
+    async fn load_player(&self, id: Uuid, include_details: bool) -> Result<Option<Player>, String> {
         let Some(username) = self.player_db.get_username_by_uuid(id).await? else {
             return Ok(None);
         };
@@ -107,7 +103,7 @@ impl Api {
         &self,
         ids: &[Uuid],
         include_details: bool,
-    ) -> Result<Vec<ListPlayers200ResponseItemsInner>, String> {
+    ) -> Result<Vec<Player>, String> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -168,6 +164,21 @@ impl Api {
         )?;
         Ok(first.is_some() && second.is_some())
     }
+
+    async fn load_friend_request_players(
+        &self,
+        receiver_id: Uuid,
+        sender_id: Uuid,
+    ) -> Result<Option<(Player, Player)>, String> {
+        let (receiver, sender) = tokio::try_join!(
+            self.load_player(receiver_id, false),
+            self.load_player(sender_id, false),
+        )?;
+        Ok(match (sender, receiver) {
+            (Some(sender), Some(receiver)) => Some((sender, receiver)),
+            _ => None,
+        })
+    }
 }
 
 #[async_trait]
@@ -187,12 +198,12 @@ impl Players<String> for Api {
                 AcceptPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-        if !self
-            .players_exist(path_params.player_id, path_params.sender_id)
+        let Some((sender, receiver)) = self
+            .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
-        {
+        else {
             return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
-        }
+        };
 
         let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
         let request =
@@ -231,6 +242,8 @@ impl Players<String> for Api {
         }
 
         transaction.commit().await.map_err(log_database_error)?;
+        self.publish_stream_event(friend_request_accepted_event(sender, receiver))
+            .await;
         Ok(AcceptPlayerFriendRequestResponse::Status204_TheFriendRequestWasAcceptedSuccessfully)
     }
 
@@ -324,12 +337,12 @@ impl Players<String> for Api {
                 AddPlayerFriendRequestResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSender,
             );
         }
-        if !self
-            .players_exist(path_params.player_id, path_params.sender_id)
+        let Some((sender, receiver)) = self
+            .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
-        {
+        else {
             return Ok(AddPlayerFriendRequestResponse::Status404_ThePlayerOrSenderWasNotFound);
-        }
+        };
 
         let (player1_id, player2_id) =
             normalize_friendship(path_params.player_id, path_params.sender_id);
@@ -353,7 +366,7 @@ impl Players<String> for Api {
             );
         }
 
-        sqlx::query(
+        let request = sqlx::query(
             r#"
             INSERT INTO friend_requests (player_id, sender_id)
             VALUES (?, ?)
@@ -365,6 +378,11 @@ impl Players<String> for Api {
         .execute(&self.pool)
         .await
         .map_err(log_database_error)?;
+
+        if request.rows_affected() > 0 {
+            self.publish_stream_event(friend_request_added_event(sender, receiver))
+                .await;
+        }
 
         Ok(AddPlayerFriendRequestResponse::Status204_TheFriendRequestWasAddedSuccessfully)
     }
@@ -631,12 +649,12 @@ impl Players<String> for Api {
                 RejectPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-        if !self
-            .players_exist(path_params.player_id, path_params.sender_id)
+        let Some((sender, receiver)) = self
+            .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
-        {
+        else {
             return Ok(RejectPlayerFriendRequestResponse::Status404_ThePlayer);
-        }
+        };
 
         let request =
             sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
@@ -649,6 +667,8 @@ impl Players<String> for Api {
             return Ok(RejectPlayerFriendRequestResponse::Status404_ThePlayer);
         }
 
+        self.publish_stream_event(friend_request_rejected_event(sender, receiver))
+            .await;
         Ok(RejectPlayerFriendRequestResponse::Status204_TheFriendRequestWasRejectedSuccessfully)
     }
 
@@ -712,19 +732,24 @@ impl Players<String> for Api {
                 RemovePlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-        if !self
-            .players_exist(path_params.player_id, path_params.sender_id)
+        let Some((sender, receiver)) = self
+            .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
-        {
+        else {
             return Ok(RemovePlayerFriendRequestResponse::Status404_ThePlayerOrSenderWasNotFound);
-        }
+        };
 
-        sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
-            .bind(path_params.player_id)
-            .bind(path_params.sender_id)
-            .execute(&self.pool)
-            .await
-            .map_err(log_database_error)?;
+        let request =
+            sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+                .bind(path_params.player_id)
+                .bind(path_params.sender_id)
+                .execute(&self.pool)
+                .await
+                .map_err(log_database_error)?;
+        if request.rows_affected() > 0 {
+            self.publish_stream_event(friend_request_removed_event(sender, receiver))
+                .await;
+        }
 
         Ok(RemovePlayerFriendRequestResponse::Status204_TheFriendRequestWasRemovedSuccessfully)
     }

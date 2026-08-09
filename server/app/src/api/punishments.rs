@@ -248,17 +248,13 @@ fn row_id(value: i64) -> Result<u64, String> {
 }
 
 impl ProofRecord {
-    fn into_api(self) -> Result<ListPunishments200ResponseItemsInnerProofsInner, String> {
-        Ok(ListPunishments200ResponseItemsInnerProofsInner::new(
-            row_id(self.id)?,
-            self.text,
-            self.public,
-        ))
+    fn into_api(self) -> Result<Proof, String> {
+        Ok(Proof::new(row_id(self.id)?, self.text, self.public))
     }
 }
 
 impl PunishmentProofRecord {
-    fn into_api(self) -> Result<ListPunishments200ResponseItemsInnerProofsInner, String> {
+    fn into_api(self) -> Result<Proof, String> {
         ProofRecord {
             id: self.id,
             text: self.text,
@@ -269,10 +265,7 @@ impl PunishmentProofRecord {
 }
 
 impl Api {
-    async fn load_proofs(
-        &self,
-        punishment_id: i64,
-    ) -> Result<Vec<ListPunishments200ResponseItemsInnerProofsInner>, String> {
+    async fn load_proofs(&self, punishment_id: i64) -> Result<Vec<Proof>, String> {
         sqlx::query_as::<_, ProofRecord>(
             "SELECT id, text, public FROM proofs WHERE punish_id = ? ORDER BY id",
         )
@@ -288,7 +281,7 @@ impl Api {
     async fn load_proofs_for_punishments(
         &self,
         punishment_ids: &[i64],
-    ) -> Result<BTreeMap<i64, Vec<ListPunishments200ResponseItemsInnerProofsInner>>, String> {
+    ) -> Result<BTreeMap<i64, Vec<Proof>>, String> {
         if punishment_ids.is_empty() {
             return Ok(BTreeMap::new());
         }
@@ -307,8 +300,7 @@ impl Api {
             .fetch_all(self.punishments_pool())
             .await
             .map_err(db_error)?;
-        let mut proofs =
-            BTreeMap::<i64, Vec<ListPunishments200ResponseItemsInnerProofsInner>>::new();
+        let mut proofs = BTreeMap::<i64, Vec<Proof>>::new();
         for row in rows {
             let punishment_id = row.punish_id;
             proofs
@@ -322,8 +314,8 @@ impl Api {
     fn record_into_api(
         &self,
         record: PunishmentRecord,
-        proofs: Vec<ListPunishments200ResponseItemsInnerProofsInner>,
-    ) -> Result<ListPunishments200ResponseItemsInner, String> {
+        proofs: Vec<Proof>,
+    ) -> Result<Punishment, String> {
         let kind = StoredPunishmentType::from_db(&record.r#type)
             .ok_or_else(|| format!("unknown punishment type in database: {}", record.r#type))?;
         let actor_id = Uuid::parse_str(&record.operator)
@@ -340,7 +332,7 @@ impl Api {
             record.revocation_operator,
         ) {
             (Some(id), Some(reason), Some(timestamp), Some(operator)) => {
-                Nullable::Present(ListPunishments200ResponseItemsInnerRevocation::new(
+                Nullable::Present(Revocation1::new(
                     row_id(id)?,
                     reason,
                     Uuid::parse_str(&operator)
@@ -350,7 +342,7 @@ impl Api {
             }
             _ => Nullable::Null,
         };
-        Ok(ListPunishments200ResponseItemsInner::new(
+        Ok(Punishment::new(
             row_id(record.id)?,
             record.name,
             record.target,
@@ -367,10 +359,7 @@ impl Api {
         ))
     }
 
-    async fn fetch_punishment(
-        &self,
-        id: i64,
-    ) -> Result<Option<ListPunishments200ResponseItemsInner>, String> {
+    async fn fetch_punishment(&self, id: i64) -> Result<Option<Punishment>, String> {
         let record = sqlx::query_as::<_, PunishmentRecord>(
             "SELECT h.id, h.name, h.target, h.reason, h.operator, h.type, h.start, h.end, h.server, h.extra, (p.id IS NOT NULL) AS active, u.id AS revocation_id, u.reason AS revocation_reason, u.timestamp AS revocation_timestamp, u.operator AS revocation_operator FROM punishmentHistory h LEFT JOIN punishments p ON p.id = h.id LEFT JOIN unpunish u ON u.punish_id = h.id WHERE h.id = ? ORDER BY u.id DESC LIMIT 1"
         ).bind(id).fetch_optional(self.punishments_pool()).await.map_err(db_error)?;
@@ -402,7 +391,7 @@ impl Api {
         &self,
         punishment_id: i64,
         proof_id: i64,
-    ) -> Result<Option<ListPunishments200ResponseItemsInnerProofsInner>, String> {
+    ) -> Result<Option<Proof>, String> {
         sqlx::query_as::<_, ProofRecord>(
             "SELECT id, text, public FROM proofs WHERE id = ? AND punish_id = ?",
         )
