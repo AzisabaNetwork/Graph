@@ -8,8 +8,8 @@ put:
     - apiKeyAuth:
         - players:write
   parameters:
-    - "../../openapi.yaml#/components/parameters/PlayerId"
-    - "../../openapi.yaml#/components/parameters/PlayerFriendRequestSenderId"
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerFriendRequestSenderId"
   responses:
     "204":
       description: The friend request was rejected successfully.
