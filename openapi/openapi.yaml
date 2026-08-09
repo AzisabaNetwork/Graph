@@ -25,6 +25,8 @@ tags:
     description: Operations related to players.
   - name: punishments
     description: Operations related to punishment records and proofs.
+  - name: stream
+    description: Operations related to stream events.
 
 paths:
   /api-keys:
