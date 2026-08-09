@@ -1,5 +1,5 @@
 type: object
-description: A published update about changes to a network service.
+description: Represents a patch note.
 required:
   - id
   - target

@@ -1,7 +1,7 @@
 get:
   operationId: getPlayerById
   summary: Get player
-  description: |
+  description: >
     Returns the player with the specified ID.
     The `discordId` field is `null` unless the API key has the `players:read-details` scope.
   tags:

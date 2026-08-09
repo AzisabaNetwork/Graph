@@ -1,5 +1,5 @@
 type: object
-description: A player profile. The Discord user ID is hidden unless the API key has permission to read it.
+description: Represents a player profile.
 required:
   - id
   - discordId

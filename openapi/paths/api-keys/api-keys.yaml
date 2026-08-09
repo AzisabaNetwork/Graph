@@ -73,7 +73,7 @@ post:
             scopes:
               allOf:
                 - $ref: "../../components/schemas/api-key.yaml#/properties/scopes"
-              description: |
+              description: >
                 The scopes required for the new API key. The API key used to make the
                 request must be authorized to delegate each requested scope.
             expiresAt:
@@ -97,7 +97,7 @@ post:
                   apiKey:
                     type: string
                     pattern: "^azk_live_[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]{43}$"
-                    description: |
+                    description: >
                       The generated API key. This value is returned only once and
                       must be stored securely by the client.
     "400":

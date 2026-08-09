@@ -1,6 +1,6 @@
 type: http
 scheme: bearer
 bearerFormat: API key
-description: |
+description: >
   Authenticates requests using an API key with the Bearer authentication scheme.
   Send the key as `Authorization: Bearer <api-key>`.

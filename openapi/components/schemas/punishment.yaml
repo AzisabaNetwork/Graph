@@ -1,5 +1,5 @@
 type: object
-description: A punishment issued to a target on the network.
+description: Represents a punishment.
 required:
   - id
   - targetName

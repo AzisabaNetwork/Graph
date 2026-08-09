@@ -1,5 +1,5 @@
 type: object
-description: The result of a single crawl of a Minecraft server.
+description: Represents a Minecraft server crawl.
 required:
   - id
   - address

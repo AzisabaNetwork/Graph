@@ -1,5 +1,5 @@
 type: string
-description: |
+description: >
   A permission granted to an API key. The `*` scope grants every permission.
   The `players:read-details` scope grants the access available with
   `players:read` and also permits access to linked Discord user IDs.

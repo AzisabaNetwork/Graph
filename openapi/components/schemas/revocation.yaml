@@ -1,5 +1,5 @@
 type: object
-description: Details about the revocation of a punishment.
+description: Represents a punishment revocation.
 required:
   - id
   - reason

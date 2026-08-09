@@ -1,5 +1,5 @@
 type: object
-description: Evidence attached to a punishment.
+description: Represents punishment evidence.
 required:
   - id
   - text
