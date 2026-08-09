@@ -1,6 +1,7 @@
 get:
-  summary: List API keys.
   operationId: listApiKeys
+  summary: List API keys
+  description: Returns a list of API keys.
   tags:
     - api-keys
   security:
@@ -15,7 +16,6 @@ get:
         minimum: 1
         maximum: 100
         default: 20
-
     - name: cursor
       in: query
       description: The cursor returned by the previous request.
@@ -27,7 +27,20 @@ get:
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/ListApiKeysResponse"
+            type: object
+            required:
+              - items
+              - nextCursor
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: "../../openapi.yaml#/components/schemas/ApiKey"
+              nextCursor:
+                type:
+                  - string
+                  - "null"
+                description: The cursor for retrieving the next page, or `null` if no more results are available.
     "400":
       $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
@@ -36,8 +49,9 @@ get:
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 post:
-  summary: Create an API key
   operationId: createApiKey
+  summary: Create API key
+  description: Creates a new API key.
   tags:
     - api-keys
   security:
@@ -48,14 +62,44 @@ post:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/CreateApiKeyRequest"
+          type: object
+          additionalProperties: false
+          required:
+            - name
+            - scopes
+          properties:
+            name:
+              $ref: "../../components/schemas/api-key.yaml#/properties/name"
+            scopes:
+              allOf:
+                - $ref: "../../components/schemas/api-key.yaml#/properties/scopes"
+              description: |
+                The scopes required for the new API key. The API key used to make the
+                request must be authorized to delegate each requested scope.
+            expiresAt:
+              allOf:
+                - $ref: "../../components/schemas/api-key.yaml#/properties/expiresAt"
+              description: The future date and time at which the API key expires, or `null` if it does not expire.
+            playerId:
+              $ref: "../../components/schemas/api-key.yaml#/properties/playerId"
   responses:
     "201":
       description: The API key was created successfully.
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/CreateApiKeyResponse"
+            allOf:
+              - $ref: "../../openapi.yaml#/components/schemas/ApiKey"
+              - type: object
+                required:
+                  - apiKey
+                properties:
+                  apiKey:
+                    type: string
+                    pattern: "^azk_live_[A-Za-z0-9_-]{16}\\.[A-Za-z0-9_-]{43}$"
+                    description: |
+                      The generated API key. This value is returned only once and
+                      must be stored securely by the client.
     "400":
       $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":

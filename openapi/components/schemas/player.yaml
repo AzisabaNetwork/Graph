@@ -10,28 +10,32 @@ required:
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/PlayerId"
-
+    readOnly: true
   discordId:
     type:
       - string
       - "null"
+    maxLength: 20
     description: The Discord user ID linked to the player, or `null` if no Discord account is linked or the API key lacks the `players:read-details` scope.
-
   username:
     type: string
+    minLength: 3
+    maxLength: 16
+    pattern: "^[A-Za-z0-9_]+$"
+    readOnly: true
     description: The player's Minecraft username.
-
   status:
     $ref: "../../openapi.yaml#/components/schemas/PlayerStatus"
-
   currentServer:
     type:
       - string
       - "null"
+    maxLength: 255
     description: The server to which the player is currently connected, or `null` if the player is offline.
-
   bio:
     type:
       - string
       - "null"
+    minLength: 1
+    maxLength: 160
     description: The player's biography of up to 160 characters, or `null` if it is not set.

@@ -1,6 +1,7 @@
 get:
-  summary: Get a punishment proof
   operationId: getPunishmentProofById
+  summary: Get punishment proof
+  description: Returns the specified proof for the specified punishment.
   tags:
     - punishments
   security:
@@ -24,8 +25,9 @@ get:
       description: The punishment or proof was not found.
 
 patch:
-  summary: Update a punishment proof
   operationId: updatePunishmentProofById
+  summary: Update punishment proof
+  description: Updates the specified proof for the specified punishment.
   tags:
     - punishments
   security:
@@ -39,7 +41,14 @@ patch:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/UpdateProofRequest"
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            text:
+              $ref: "../../components/schemas/proof.yaml#/properties/text"
+            public:
+              $ref: "../../components/schemas/proof.yaml#/properties/public"
   responses:
     "200":
       description: The proof was updated successfully.
@@ -57,8 +66,9 @@ patch:
       description: The punishment or proof was not found.
 
 delete:
-  summary: Delete a punishment proof
   operationId: deletePunishmentProofById
+  summary: Delete punishment proof
+  description: Deletes the specified proof from the specified punishment.
   tags:
     - punishments
   security:

@@ -1,6 +1,7 @@
 get:
-  summary: Get a patch note by ID
   operationId: getPatchNoteById
+  summary: Get patch note
+  description: Returns the patch note with the specified ID.
   tags:
     - patch-notes
   security:
@@ -23,8 +24,9 @@ get:
       description: The patch note was not found.
 
 delete:
-  summary: Delete a patch note by ID
   operationId: deletePatchNoteById
+  summary: Delete patch note
+  description: Deletes the patch note with the specified ID.
   tags:
     - patch-notes
   security:

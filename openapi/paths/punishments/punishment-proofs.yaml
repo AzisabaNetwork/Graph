@@ -1,6 +1,7 @@
 get:
-  summary: List punishment proofs
   operationId: listPunishmentProofs
+  summary: List punishment proofs
+  description: Returns proofs attached to the specified punishment.
   tags:
     - punishments
   security:
@@ -10,7 +11,7 @@ get:
     - $ref: "../../openapi.yaml#/components/parameters/PunishmentId"
   responses:
     "200":
-      description: Proofs were retrieved successfully.
+      description: The proofs were retrieved successfully.
       content:
         application/json:
           schema:
@@ -25,8 +26,9 @@ get:
       description: The punishment was not found.
 
 post:
-  summary: Add proof to an active punishment
   operationId: createPunishmentProof
+  summary: Create punishment proof
+  description: Creates a proof for the specified active punishment.
   tags:
     - punishments
   security:
@@ -39,7 +41,16 @@ post:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/CreateProofRequest"
+          type: object
+          additionalProperties: false
+          required:
+            - text
+            - public
+          properties:
+            text:
+              $ref: "../../components/schemas/proof.yaml#/properties/text"
+            public:
+              $ref: "../../components/schemas/proof.yaml#/properties/public"
   responses:
     "201":
       description: The proof was created successfully.

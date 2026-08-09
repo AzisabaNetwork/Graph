@@ -1,7 +1,9 @@
 get:
-  summary: Get a player by ID
-  description: Returns a player. The `discordId` field is `null` unless the API key has the `players:read-details` scope.
   operationId: getPlayerById
+  summary: Get player
+  description: |
+    Returns the player with the specified ID.
+    The `discordId` field is `null` unless the API key has the `players:read-details` scope.
   tags:
     - players
   security:
@@ -26,8 +28,9 @@ get:
       description: The player was not found.
 
 patch:
-  summary: Update a player by ID
   operationId: updatePlayerById
+  summary: Update player
+  description: Updates the player with the specified ID.
   tags:
     - players
   security:
@@ -40,7 +43,20 @@ patch:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/UpdatePlayerRequest"
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            discordId:
+              allOf:
+                - $ref: "../../components/schemas/player.yaml#/properties/discordId"
+              description: The Discord user ID to link to the player, or `null` to remove the existing link.
+            status:
+              $ref: "../../components/schemas/player.yaml#/properties/status"
+            currentServer:
+              $ref: "../../components/schemas/player.yaml#/properties/currentServer"
+            bio:
+              $ref: "../../components/schemas/player.yaml#/properties/bio"
   responses:
     "200":
       description: The player was updated successfully.
@@ -55,4 +71,4 @@ patch:
     "403":
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
     "404":
-      description: No Minecraft user exists with the specified player ID.
+      description: The player was not found.

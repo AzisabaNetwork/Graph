@@ -14,53 +14,47 @@ required:
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/CrawlId"
-
+    readOnly: true
   address:
     type: string
     minLength: 1
     maxLength: 255
     description: The hostname or IP address of the crawled Minecraft server.
-
   port:
     type: integer
     minimum: 1
     maximum: 65535
     description: The port of the crawled Minecraft server.
-
   ping:
     type: integer
     minimum: 0
+    maximum: 4294967295
     description: The server ping in milliseconds.
-
   version:
     type: string
     description: The Minecraft version name reported by the server.
-
   protocolVersion:
     type: integer
     description: The Minecraft protocol version reported by the server.
-
   maxPlayers:
     type: integer
     minimum: 0
+    maximum: 4294967295
     description: The maximum number of players reported by the server.
-
   onlinePlayers:
     type: integer
     minimum: 0
+    maximum: 4294967295
     description: The number of players currently connected to the server.
-
   description:
     type: string
     description: The server description reported by the server.
-
   favicon:
     type:
       - string
       - "null"
     pattern: "^data:image/png;base64,"
     description: The server favicon as a Base64-encoded PNG data URL, or `null` if no favicon was provided.
-
   crawledAt:
     type: string
     format: date-time

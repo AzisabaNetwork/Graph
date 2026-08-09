@@ -1,14 +1,16 @@
 type: string
 description: |
-  A permission granted to an API key. The `players:read-details` scope grants
-  the player access available with `players:read` and also permits access to
-  linked Discord user IDs.
+  A permission granted to an API key. The `*` scope grants every permission.
+  The `players:read-details` scope grants the access available with
+  `players:read` and also permits access to linked Discord user IDs.
 enum:
   - "*"
   - api-keys:read
   - api-keys:write
   - crawls:read
   - crawls:write
+  - emojis:read
+  - emojis:write
   - patch-notes:read
   - patch-notes:write
   - players:read

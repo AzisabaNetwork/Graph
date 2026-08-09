@@ -1,6 +1,7 @@
 get:
-  summary: Get a crawl by ID
   operationId: getCrawlById
+  summary: Get crawl
+  description: Returns the crawl with the specified ID.
   tags:
     - crawls
   security:
@@ -23,8 +24,9 @@ get:
       description: The crawl was not found.
 
 delete:
-  summary: Delete a crawl by ID
   operationId: deleteCrawlById
+  summary: Delete crawl
+  description: Deletes the crawl with the specified ID.
   tags:
     - crawls
   security:

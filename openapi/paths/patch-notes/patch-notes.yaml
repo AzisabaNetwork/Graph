@@ -1,6 +1,7 @@
 get:
-  summary: List patch notes
   operationId: listPatchNotes
+  summary: List patch notes
+  description: Returns a list of patch notes.
   tags:
     - patch-notes
   security:
@@ -15,19 +16,16 @@ get:
         minimum: 1
         maximum: 100
         default: 20
-
     - name: cursor
       in: query
       description: The cursor returned by the previous request.
       schema:
         type: string
-
     - name: target
       in: query
       description: The target used to filter patch notes.
       schema:
         $ref: "../../openapi.yaml#/components/schemas/PatchNoteTarget"
-
     - name: category
       in: query
       description: The category used to filter patch notes.
@@ -39,7 +37,20 @@ get:
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/ListPatchNotesResponse"
+            type: object
+            required:
+              - items
+              - nextCursor
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: "../../openapi.yaml#/components/schemas/PatchNote"
+              nextCursor:
+                type:
+                  - string
+                  - "null"
+                description: The cursor for retrieving the next page, or `null` if no more results are available.
     "400":
       $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
@@ -48,8 +59,9 @@ get:
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 post:
-  summary: Create a patch note
   operationId: createPatchNote
+  summary: Create patch note
+  description: Creates a new patch note.
   tags:
     - patch-notes
   security:
@@ -60,7 +72,31 @@ post:
     content:
       multipart/form-data:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/CreatePatchNoteRequest"
+          type: object
+          required:
+            - target
+            - category
+            - title
+            - body
+          properties:
+            target:
+              $ref: "../../components/schemas/patch-note.yaml#/properties/target"
+            category:
+              $ref: "../../components/schemas/patch-note.yaml#/properties/category"
+            title:
+              $ref: "../../components/schemas/patch-note.yaml#/properties/title"
+            body:
+              $ref: "../../components/schemas/patch-note.yaml#/properties/body"
+            authorId:
+              allOf:
+                - $ref: "../../openapi.yaml#/components/schemas/PlayerId"
+              description: The ID of the patch note author. Omit this field if the author is unknown.
+            images:
+              type: array
+              description: JPEG, PNG, GIF, or WebP image files to attach to the patch note.
+              items:
+                type: string
+                format: binary
   responses:
     "201":
       description: The patch note was created successfully.

@@ -1,51 +1,66 @@
 get:
-  summary: List punishments
   operationId: listPunishments
+  summary: List punishments
+  description: Returns a list of punishments.
   tags:
     - punishments
   security:
     - apiKeyAuth:
         - punishments:read
   parameters:
-    - name: target
-      in: query
-      schema:
-        type: string
-
-    - name: type
-      in: query
-      schema:
-        $ref: "../../openapi.yaml#/components/schemas/PunishmentType"
-
-    - name: server
-      in: query
-      schema:
-        type: string
-
-    - name: active
-      in: query
-      schema:
-        type: boolean
-
-    - name: cursor
-      in: query
-      schema:
-        type: string
-
     - name: limit
       in: query
+      description: The maximum number of punishments to return.
       schema:
         type: integer
         minimum: 1
         maximum: 100
         default: 20
+    - name: cursor
+      in: query
+      description: The cursor returned by the previous request.
+      schema:
+        type: string
+    - name: target
+      in: query
+      description: The target identifier used to filter punishments.
+      schema:
+        $ref: "../../components/schemas/punishment.yaml#/properties/target"
+    - name: type
+      in: query
+      description: The punishment type used to filter punishments.
+      schema:
+        $ref: "../../openapi.yaml#/components/schemas/PunishmentType"
+    - name: server
+      in: query
+      description: The server used to filter punishments.
+      schema:
+        $ref: "../../components/schemas/punishment.yaml#/properties/server"
+    - name: active
+      in: query
+      description: The active status used to filter punishments.
+      schema:
+        type: boolean
   responses:
     "200":
-      description: Punishments were retrieved successfully.
+      description: The punishments were retrieved successfully.
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/ListPunishmentsResponse"
+            type: object
+            required:
+              - items
+              - nextCursor
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: "../../openapi.yaml#/components/schemas/Punishment"
+              nextCursor:
+                type:
+                  - string
+                  - "null"
+                description: The cursor for retrieving the next page, or `null` if no more results are available.
     "400":
       $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
@@ -54,8 +69,9 @@ get:
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 post:
-  summary: Create a punishment
   operationId: createPunishment
+  summary: Create punishment
+  description: Creates a new punishment.
   tags:
     - punishments
   security:
@@ -66,7 +82,30 @@ post:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/CreatePunishmentRequest"
+          type: object
+          additionalProperties: false
+          required:
+            - targetName
+            - target
+            - type
+            - reason
+            - expiresAt
+            - server
+          properties:
+            targetName:
+              $ref: "../../components/schemas/punishment.yaml#/properties/targetName"
+            target:
+              $ref: "../../components/schemas/punishment.yaml#/properties/target"
+            type:
+              $ref: "../../components/schemas/punishment.yaml#/properties/type"
+            reason:
+              $ref: "../../components/schemas/punishment.yaml#/properties/reason"
+            expiresAt:
+              allOf:
+                - $ref: "../../components/schemas/punishment.yaml#/properties/expiresAt"
+              description: The future expiration date and time for a temporary punishment, or `null` for a permanent punishment.
+            server:
+              $ref: "../../components/schemas/punishment.yaml#/properties/server"
   responses:
     "201":
       description: The punishment was created successfully.

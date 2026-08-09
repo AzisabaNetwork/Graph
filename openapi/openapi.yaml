@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Azisaba Graph API
-  description: An API for connecting and sharing data across Azisaba Network.
+  description: An API for connecting and sharing data across the Azisaba Network.
   version: 0.0.1
   license:
     name: MIT
@@ -66,18 +66,18 @@ components:
       $ref: "./components/parameters/api-key-id.yaml"
     CrawlId:
       $ref: "./components/parameters/crawl-id.yaml"
-    FriendId:
-      $ref: "./components/parameters/friend-id.yaml"
     PatchNoteId:
       $ref: "./components/parameters/patch-note-id.yaml"
+    PlayerFriendId:
+      $ref: "./components/parameters/player-friend-id.yaml"
+    PlayerFriendRequestSenderId:
+      $ref: "./components/parameters/player-friend-request-sender-id.yaml"
     PlayerId:
       $ref: "./components/parameters/player-id.yaml"
     ProofId:
       $ref: "./components/parameters/proof-id.yaml"
     PunishmentId:
       $ref: "./components/parameters/punishment-id.yaml"
-    SenderId:
-      $ref: "./components/parameters/sender-id.yaml"
 
   responses:
     BadRequest:
@@ -90,34 +90,14 @@ components:
   schemas:
     ApiKey:
       $ref: "./components/schemas/api-key.yaml"
+    ApiKeyId:
+      $ref: "./components/schemas/api-key-id.yaml"
     ApiKeyScope:
       $ref: "./components/schemas/api-key-scope.yaml"
     Crawl:
       $ref: "./components/schemas/crawl.yaml"
     CrawlId:
       $ref: "./components/schemas/crawl-id.yaml"
-    CreateApiKeyRequest:
-      $ref: "./components/schemas/create-api-key-request.yaml"
-    CreateApiKeyResponse:
-      $ref: "./components/schemas/create-api-key-response.yaml"
-    CreateCrawlRequest:
-      $ref: "./components/schemas/create-crawl-request.yaml"
-    CreatePatchNoteRequest:
-      $ref: "./components/schemas/create-patch-note-request.yaml"
-    CreateProofRequest:
-      $ref: "./components/schemas/create-proof-request.yaml"
-    CreatePunishmentRequest:
-      $ref: "./components/schemas/create-punishment-request.yaml"
-    ListApiKeysResponse:
-      $ref: "./components/schemas/list-api-key-response.yaml"
-    ListCrawlsResponse:
-      $ref: "./components/schemas/list-crawls-response.yaml"
-    ListPatchNotesResponse:
-      $ref: "./components/schemas/list-patch-notes-response.yaml"
-    ListPlayersResponse:
-      $ref: "./components/schemas/list-players-response.yaml"
-    ListPunishmentsResponse:
-      $ref: "./components/schemas/list-punishments-response.yaml"
     PatchNote:
       $ref: "./components/schemas/patch-note.yaml"
     PatchNoteCategory:
@@ -144,16 +124,6 @@ components:
       $ref: "./components/schemas/punishment-type.yaml"
     Revocation:
       $ref: "./components/schemas/revocation.yaml"
-    RevokePunishmentRequest:
-      $ref: "./components/schemas/revoke-punishment-request.yaml"
-    UpdateApiKeyRequest:
-      $ref: "./components/schemas/update-api-key-request.yaml"
-    UpdatePlayerRequest:
-      $ref: "./components/schemas/update-player-request.yaml"
-    UpdateProofRequest:
-      $ref: "./components/schemas/update-proof-request.yaml"
-    UpdatePunishmentRequest:
-      $ref: "./components/schemas/update-punishment-request.yaml"
 
   securitySchemes:
     apiKeyAuth:

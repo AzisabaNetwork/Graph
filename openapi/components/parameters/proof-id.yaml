@@ -1,6 +1,6 @@
 name: proofId
 in: path
 required: true
-description: The public identifier of the proof.
+description: The unique identifier of the proof.
 schema:
   $ref: "../../openapi.yaml#/components/schemas/ProofId"

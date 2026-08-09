@@ -1,7 +1,7 @@
 put:
-  summary: Create player friend request
-  description: Creates a friend request from the specified sender to the specified player.
-  operationId: createPlayerFriendRequest
+  operationId: addPlayerFriendRequest
+  summary: Add player friend request
+  description: Adds a friend request from the specified sender to the player's friend requests.
   tags:
     - players
   security:
@@ -9,10 +9,10 @@ put:
         - players:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
-    - $ref: "../../openapi.yaml#/components/parameters/SenderId"
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerFriendRequestSenderId"
   responses:
     "204":
-      description: The friend request exists.
+      description: The friend request was added successfully.
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
@@ -23,9 +23,9 @@ put:
       description: The player is already friends with the sender.
 
 delete:
-  summary: Delete player friend request
-  description: Deletes a friend request from the specified sender to the specified player.
-  operationId: deletePlayerFriendRequest
+  operationId: removePlayerFriendRequest
+  summary: Remove player friend request
+  description: Removes the specified sender's friend request from the player's friend requests.
   tags:
     - players
   security:
@@ -33,10 +33,10 @@ delete:
         - players:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
-    - $ref: "../../openapi.yaml#/components/parameters/SenderId"
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerFriendRequestSenderId"
   responses:
     "204":
-      description: The friend request does not exist.
+      description: The friend request was removed successfully.
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":

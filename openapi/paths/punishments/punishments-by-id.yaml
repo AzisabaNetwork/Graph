@@ -1,6 +1,7 @@
 get:
-  summary: Get a punishment
   operationId: getPunishmentById
+  summary: Get punishment
+  description: Returns the punishment with the specified ID.
   tags:
     - punishments
   security:
@@ -23,8 +24,9 @@ get:
       description: The punishment was not found.
 
 patch:
-  summary: Update an active punishment
   operationId: updatePunishmentById
+  summary: Update punishment
+  description: Updates the active punishment with the specified ID.
   tags:
     - punishments
   security:
@@ -37,7 +39,14 @@ patch:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/UpdatePunishmentRequest"
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            reason:
+              $ref: "../../components/schemas/punishment.yaml#/properties/reason"
+            seen:
+              $ref: "../../components/schemas/punishment.yaml#/properties/seen"
   responses:
     "200":
       description: The punishment was updated successfully.
@@ -55,8 +64,9 @@ patch:
       description: The active punishment was not found.
 
 delete:
-  summary: Revoke an active punishment
   operationId: deletePunishmentById
+  summary: Revoke punishment
+  description: Revokes the active punishment with the specified ID.
   tags:
     - punishments
   security:
@@ -69,7 +79,13 @@ delete:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/RevokePunishmentRequest"
+          type: object
+          additionalProperties: false
+          required:
+            - reason
+          properties:
+            reason:
+              $ref: "../../components/schemas/revocation.yaml#/properties/reason"
   responses:
     "204":
       description: The punishment was revoked successfully.

@@ -3,5 +3,4 @@ in: path
 required: true
 description: The public identifier of the API key.
 schema:
-  type: string
-  minLength: 1
+  $ref: "../../openapi.yaml#/components/schemas/ApiKeyId"

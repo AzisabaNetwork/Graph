@@ -1,4 +1,4 @@
 type: integer
 format: int64
 minimum: 1
-readOnly: true
+description: The unique identifier of the punishment.

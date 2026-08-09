@@ -1,7 +1,9 @@
 get:
-  summary: List players
-  description: Returns players. The `discordId` field is `null` unless the API key has the `players:read-details` scope.
   operationId: listPlayers
+  summary: List players
+  description: |
+    Returns a list of players.
+    The `discordId` field is `null` unless the API key has the `players:read-details` scope.
   tags:
     - players
   security:
@@ -18,19 +20,17 @@ get:
         minimum: 1
         maximum: 100
         default: 20
-
     - name: cursor
       in: query
       description: The cursor returned by the previous request.
       schema:
         type: string
-
     - name: discordId
       in: query
       description: The Discord user ID used to filter players. Requires the `players:read-details` scope.
       schema:
         type: string
-
+        maxLength: 20
     - name: status
       in: query
       description: The online status used to filter players.
@@ -42,10 +42,23 @@ get:
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/ListPlayersResponse"
+            type: object
+            required:
+              - items
+              - nextCursor
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: "../../openapi.yaml#/components/schemas/Player"
+              nextCursor:
+                type:
+                  - string
+                  - "null"
+                description: The cursor for retrieving the next page, or `null` if no more results are available.
     "400":
       $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
       $ref: "../../openapi.yaml#/components/responses/Unauthorized"
     "403":
-      description: The API key lacks the required scope. Filtering by `discordId` requires the `players:read-details` scope.
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"

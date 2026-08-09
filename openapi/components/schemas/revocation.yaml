@@ -1,4 +1,5 @@
 type: object
+description: Details about the revocation of a punishment.
 required:
   - id
   - reason
@@ -10,16 +11,18 @@ properties:
     format: int64
     minimum: 1
     readOnly: true
-
+    description: The unique identifier of the revocation.
   reason:
     type: string
     minLength: 1
-
+    description: The reason the punishment was revoked.
   actorId:
     type: string
     format: uuid
-
+    readOnly: true
+    description: The ID of the actor who revoked the punishment.
   createdAt:
     type: string
     format: date-time
     readOnly: true
+    description: The date and time at which the punishment was revoked.

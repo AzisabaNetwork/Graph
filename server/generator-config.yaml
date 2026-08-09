@@ -1,6 +1,8 @@
 generatorName: rust-axum
 inputSpec: "openapi/openapi.yaml"
 outputDir: "server/generated"
+globalProperties:
+  skipFormModel: false
 additionalProperties:
   packageName: graph-api
   packageVersion: 0.0.1

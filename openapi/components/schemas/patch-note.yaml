@@ -1,4 +1,5 @@
 type: object
+description: A published update about changes to a network service.
 required:
   - id
   - target
@@ -11,35 +12,34 @@ required:
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/PatchNoteId"
-
+    readOnly: true
   target:
     $ref: "../../openapi.yaml#/components/schemas/PatchNoteTarget"
-
   category:
     $ref: "../../openapi.yaml#/components/schemas/PatchNoteCategory"
-
   title:
     type: string
+    minLength: 1
+    maxLength: 255
     description: The title of the patch note.
-
   body:
     type: string
+    minLength: 1
     description: The body text of the patch note.
-
   authorId:
-    description: The ID of the author. Null when the author is not known.
+    description: The ID of the author, or `null` if the author is unknown.
     anyOf:
       - $ref: "../../openapi.yaml#/components/schemas/PlayerId"
       - type: "null"
-
   imageUrls:
     type: array
+    readOnly: true
     description: The URLs of images attached to the patch note.
     items:
       type: string
       format: uri
-
   createdAt:
     type: string
     format: date-time
+    readOnly: true
     description: The date and time at which the patch note was created.

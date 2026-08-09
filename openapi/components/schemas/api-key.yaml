@@ -1,4 +1,5 @@
 type: object
+description: Metadata and permissions associated with an API key.
 required:
   - name
   - publicId
@@ -12,33 +13,26 @@ properties:
     minLength: 1
     maxLength: 100
     description: The human-readable name of the API key.
-
   publicId:
-    type: string
-    minLength: 1
+    $ref: "../../openapi.yaml#/components/schemas/ApiKeyId"
     readOnly: true
-    description: The public identifier of the API key.
-
   scopes:
     type: array
     uniqueItems: true
     description: The scopes granted to the API key.
     items:
       $ref: "../../openapi.yaml#/components/schemas/ApiKeyScope"
-
   createdAt:
     type: string
     format: date-time
     readOnly: true
     description: The date and time at which the API key was created.
-
   expiresAt:
     type:
       - string
       - "null"
     format: date-time
     description: The date and time at which the API key expires, or `null` if it does not expire.
-
   playerId:
     type:
       - string

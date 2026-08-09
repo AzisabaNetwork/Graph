@@ -1,6 +1,7 @@
 get:
-  summary: Get an API key by ID
   operationId: getApiKeyById
+  summary: Get API key
+  description: Returns the API key with the specified ID.
   tags:
     - api-keys
   security:
@@ -23,8 +24,9 @@ get:
       description: The API key was not found.
 
 patch:
-  summary: Update an API key by ID
   operationId: updateApiKeyById
+  summary: Update API key
+  description: Updates the API key with the specified ID.
   tags:
     - api-keys
   security:
@@ -37,7 +39,20 @@ patch:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/UpdateApiKeyRequest"
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            name:
+              $ref: "../../components/schemas/api-key.yaml#/properties/name"
+            scopes:
+              allOf:
+                - $ref: "../../components/schemas/api-key.yaml#/properties/scopes"
+              description: The scopes to grant to the API key. The API key used to make the request must be authorized to delegate each requested scope.
+            expiresAt:
+              $ref: "../../components/schemas/api-key.yaml#/properties/expiresAt"
+            playerId:
+              $ref: "../../components/schemas/api-key.yaml#/properties/playerId"
   responses:
     "200":
       description: The API key was updated successfully.
@@ -55,8 +70,9 @@ patch:
       description: The API key was not found.
 
 delete:
-  summary: Delete an API key by ID
   operationId: deleteApiKeyById
+  summary: Delete API key
+  description: Deletes the API key with the specified ID.
   tags:
     - api-keys
   security:

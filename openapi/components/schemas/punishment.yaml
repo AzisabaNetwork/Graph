@@ -1,4 +1,5 @@
 type: object
+description: A punishment issued to a target on the network.
 required:
   - id
   - targetName
@@ -16,54 +17,57 @@ required:
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/PunishmentId"
-
+    readOnly: true
   targetName:
     type: string
     minLength: 1
-
+    description: The target's name at the time the punishment was issued.
   target:
     type: string
     minLength: 1
-
+    description: The target's UUID, or IP address for an IP-based punishment.
   type:
     $ref: "../../openapi.yaml#/components/schemas/PunishmentType"
-
   reason:
     type: string
     minLength: 1
-
+    description: The reason for the punishment.
   actorId:
     type: string
     format: uuid
-
+    readOnly: true
+    description: The ID of the actor who issued the punishment.
   createdAt:
     type: string
     format: date-time
     readOnly: true
-
+    description: The date and time at which the punishment was issued.
   expiresAt:
     type:
       - string
       - "null"
     format: date-time
-
+    description: The date and time at which the punishment expires, or `null` if it does not expire.
   server:
     type: string
     minLength: 1
-
+    description: The server on which the punishment was issued.
   seen:
     type: boolean
-
+    description: Whether the target has seen the punishment.
   active:
     type: boolean
     readOnly: true
-
+    description: Whether the punishment is currently active.
   proofs:
     type: array
+    readOnly: true
+    description: The proofs attached to the punishment.
     items:
       $ref: "../../openapi.yaml#/components/schemas/Proof"
-
   revocation:
+    readOnly: true
+    description: The revocation details, or `null` if the punishment has not been revoked.
     oneOf:
       - $ref: "../../openapi.yaml#/components/schemas/Revocation"
       - type: "null"

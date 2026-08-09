@@ -1,4 +1,5 @@
 type: object
+description: Evidence attached to a punishment.
 required:
   - id
   - text
@@ -6,10 +7,11 @@ required:
 properties:
   id:
     $ref: "../../openapi.yaml#/components/schemas/ProofId"
-
+    readOnly: true
   text:
     type: string
     minLength: 1
-
+    description: The proof content.
   public:
     type: boolean
+    description: Whether the proof is publicly visible.

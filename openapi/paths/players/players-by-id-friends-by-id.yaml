@@ -1,7 +1,7 @@
-post:
-  summary: Add a friend
-  description: Adds a player as a friend.
+put:
   operationId: addPlayerFriend
+  summary: Add player friend
+  description: Adds the specified friend to the player's friends.
   tags:
     - players
   security:
@@ -9,7 +9,7 @@ post:
         - players:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
-    - $ref: "../../openapi.yaml#/components/parameters/FriendId"
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerFriendId"
   responses:
     "201":
       description: The friend was added successfully.
@@ -29,9 +29,9 @@ post:
       description: The player is already friends with the specified player.
 
 delete:
-  summary: Remove a friend
-  description: Removes a friend from the player's friends.
   operationId: removePlayerFriend
+  summary: Remove player friend
+  description: Removes the specified friend from the player's friends.
   tags:
     - players
   security:
@@ -39,7 +39,7 @@ delete:
         - players:write
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/PlayerId"
-    - $ref: "../../openapi.yaml#/components/parameters/FriendId"
+    - $ref: "../../openapi.yaml#/components/parameters/PlayerFriendId"
   responses:
     "204":
       description: The friend was removed successfully.

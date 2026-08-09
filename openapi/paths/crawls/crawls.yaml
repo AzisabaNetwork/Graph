@@ -1,6 +1,7 @@
 get:
-  summary: List crawls.
   operationId: listCrawls
+  summary: List crawls
+  description: Returns a list of crawls.
   tags:
     - crawls
   security:
@@ -15,44 +16,37 @@ get:
         minimum: 1
         maximum: 100
         default: 20
-
     - name: cursor
       in: query
       description: The cursor returned by the previous request.
       schema:
         type: string
-
     - name: address
       in: query
       description: The address used to filter crawls.
       schema:
         $ref: "../../components/schemas/crawl.yaml#/properties/address"
-
     - name: port
       in: query
       description: The port used to filter crawls.
       schema:
         $ref: "../../components/schemas/crawl.yaml#/properties/port"
-
     - name: version
       in: query
       description: The version used to filter crawls.
       schema:
         $ref: "../../components/schemas/crawl.yaml#/properties/version"
-
     - name: protocolVersion
       in: query
       description: The protocol version used to filter crawls.
       schema:
         $ref: "../../components/schemas/crawl.yaml#/properties/protocolVersion"
-
     - name: crawledFrom
       in: query
       description: The inclusive lower bound of the crawl date and time.
       schema:
         type: string
         format: date-time
-
     - name: crawledTo
       in: query
       description: The exclusive upper bound of the crawl date and time.
@@ -65,7 +59,20 @@ get:
       content:
         application/json:
           schema:
-            $ref: "../../openapi.yaml#/components/schemas/ListCrawlsResponse"
+            type: object
+            required:
+              - items
+              - nextCursor
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: "../../openapi.yaml#/components/schemas/Crawl"
+              nextCursor:
+                type:
+                  - string
+                  - "null"
+                description: The cursor for retrieving the next page, or `null` if no more results are available.
     "400":
       $ref: "../../openapi.yaml#/components/responses/BadRequest"
     "401":
@@ -74,8 +81,9 @@ get:
       $ref: "../../openapi.yaml#/components/responses/Forbidden"
 
 post:
-  summary: Create a crawl.
   operationId: createCrawl
+  summary: Create crawl
+  description: Creates a new crawl.
   tags:
     - crawls
   security:
@@ -86,7 +94,39 @@ post:
     content:
       application/json:
         schema:
-          $ref: "../../openapi.yaml#/components/schemas/CreateCrawlRequest"
+          type: object
+          additionalProperties: false
+          required:
+            - address
+            - port
+            - ping
+            - version
+            - protocolVersion
+            - maxPlayers
+            - onlinePlayers
+            - favicon
+            - crawledAt
+          properties:
+            address:
+              $ref: "../../components/schemas/crawl.yaml#/properties/address"
+            port:
+              $ref: "../../components/schemas/crawl.yaml#/properties/port"
+            ping:
+              $ref: "../../components/schemas/crawl.yaml#/properties/ping"
+            version:
+              $ref: "../../components/schemas/crawl.yaml#/properties/version"
+            protocolVersion:
+              $ref: "../../components/schemas/crawl.yaml#/properties/protocolVersion"
+            maxPlayers:
+              $ref: "../../components/schemas/crawl.yaml#/properties/maxPlayers"
+            onlinePlayers:
+              $ref: "../../components/schemas/crawl.yaml#/properties/onlinePlayers"
+            description:
+              $ref: "../../components/schemas/crawl.yaml#/properties/description"
+            favicon:
+              $ref: "../../components/schemas/crawl.yaml#/properties/favicon"
+            crawledAt:
+              $ref: "../../components/schemas/crawl.yaml#/properties/crawledAt"
   responses:
     "201":
       description: The crawl was created successfully.
