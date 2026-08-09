@@ -1,0 +1,63 @@
+name: Publish SDKs
+
+on:
+  workflow_call:
+    inputs:
+      typescript_version:
+        description: TypeScript SDK version to publish
+        required: true
+        type: string
+      java_version:
+        description: Java SDK version to publish
+        required: true
+        type: string
+      rust_version:
+        description: Rust SDK version to publish
+        required: true
+        type: string
+    secrets:
+      REPO_USERNAME:
+        required: true
+      REPO_PASSWORD:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      typescript_version:
+        description: TypeScript SDK version to publish
+        required: true
+        type: string
+      java_version:
+        description: "Java SDK version to publish (for example: 1.0.0 or 1.0.0-SNAPSHOT)"
+        required: true
+        type: string
+      rust_version:
+        description: Rust SDK version to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-typescript:
+    name: Publish TypeScript SDK
+    uses: ./.github/workflows/publish-typescript-sdk.yaml
+    with:
+      version: ${{ inputs.typescript_version }}
+    secrets: inherit
+
+  publish-java:
+    name: Publish Java SDK
+    uses: ./.github/workflows/publish-java-sdk.yaml
+    with:
+      version: ${{ inputs.java_version }}
+    secrets: inherit
+
+  publish-rust:
+    name: Publish Rust SDK
+    uses: ./.github/workflows/publish-rust-sdk.yaml
+    with:
+      version: ${{ inputs.rust_version }}
+    secrets: inherit

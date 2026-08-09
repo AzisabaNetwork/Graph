@@ -1,6 +1,13 @@
 name: Publish Rust SDK
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to publish
+        required: true
+        type: string
+
   workflow_dispatch:
     inputs:
       version:
@@ -36,45 +43,14 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install generator dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Generate Rust SDK
-        env:
-          VERSION: ${{ inputs.version }}
-        run: pnpm generate:rust-sdk --additional-properties packageVersion="$VERSION"
-
-      - name: Validate package metadata
-        working-directory: sdks/rust/generated
-        run: |
-          test "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].license')" = "MIT"
-          test "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" = "${{ inputs.version }}"
-
-      - name: Build and test Rust SDK
-        working-directory: sdks/rust/generated
-        run: |
-          cargo check --all-targets
-          cargo test
-
-      - name: Verify crates.io package
-        working-directory: sdks/rust/generated
-        run: cargo publish --dry-run
 
       - name: Authenticate with crates.io
         id: crates_io_auth
         uses: rust-lang/crates-io-auth-action@v1
 
-      - name: Publish package
+      - name: Generate and publish Rust SDK
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
-        working-directory: sdks/rust/generated
-        run: cargo publish
+          CRATES_IO_API_KEY: ${{ steps.crates_io_auth.outputs.token }}
+        run: pnpm exec fern generate --group publish-rust --local --version "${{ inputs.version }}"

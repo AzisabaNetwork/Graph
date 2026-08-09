@@ -7,6 +7,6 @@
 
 node_modules/
 
-/sdks/*/generated
+/sdks/
 /server/generated
 /server/**/target

@@ -1,6 +1,13 @@
 name: Publish TypeScript SDK
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to publish
+        required: true
+        type: string
+
   workflow_dispatch:
     inputs:
       version:
@@ -34,56 +41,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org/
           package-manager-cache: false
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 21
 
       - name: Install generator dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate TypeScript SDK
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          pnpm generate:ts-sdk \
-            --additional-properties npmVersion="$VERSION" \
-            --model-name-mappings CreatePatchNoteRequest=CreatePatchNoteBody
-
-      - name: Validate package metadata
-        env:
-          VERSION: ${{ inputs.version }}
-        working-directory: sdks/typescript/generated
-        run: |
-          npm version "$VERSION" --allow-same-version --no-git-tag-version
-          npm pkg set \
-            repository.type=git \
-            repository.url=https://github.com/AzisabaNetwork/Graph.git
-
-      - name: Install SDK dependencies
-        working-directory: sdks/typescript/generated
-        run: npm install --ignore-scripts --no-package-lock
-
-      - name: Build SDK
-        working-directory: sdks/typescript/generated
-        run: npm run build
-
-      - name: Publish package
-        env:
-          VERSION: ${{ inputs.version }}
-        working-directory: sdks/typescript/generated
-        run: |
-          if [[ "$VERSION" == *-* ]]; then
-            tag=next
-          else
-            tag=latest
-          fi
-
-          npm publish \
-            --access public \
-            --tag "$tag" \
-            --ignore-scripts
+      - name: Generate and publish TypeScript SDK
+        run: pnpm exec fern generate --group publish-typescript --local --version "${{ inputs.version }}"
