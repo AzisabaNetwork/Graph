@@ -18,3 +18,4 @@ enum:
   - players:write
   - punishments:read
   - punishments:write
+  - stream:read
