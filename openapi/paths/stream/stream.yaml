@@ -1,0 +1,22 @@
+get:
+  operationId: streamEvents
+  summary: Stream events
+  description: >
+    Streams real-time events as Server-Sent Events (SSE).
+    Events are filtered based on the scopes granted to the API key.
+  tags:
+    - stream
+  security:
+    - apiKeyAuth:
+        - stream:read
+  responses:
+    "200":
+      description: The event stream was established successfully.
+      content:
+        text/event-stream:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/StreamEvent"
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"

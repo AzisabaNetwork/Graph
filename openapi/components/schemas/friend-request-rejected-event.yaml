@@ -1,0 +1,19 @@
+type: object
+description: Represents an event indicating that a friend request was rejected.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: friend-request-rejected
+  data:
+    type: object
+    description: The data associated with the friend request.
+    required:
+      - sender
+      - receiver
+    properties:
+      sender:
+        $ref: "../../openapi.yaml#/components/schemas/Player"
+      receiver:
+        $ref: "../../openapi.yaml#/components/schemas/Player"

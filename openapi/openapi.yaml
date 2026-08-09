@@ -63,6 +63,8 @@ paths:
     $ref: "./paths/punishments/punishment-proofs.yaml"
   /punishments/{punishmentId}/proofs/{proofId}:
     $ref: "./paths/punishments/punishment-proofs-by-id.yaml"
+  /stream:
+    $ref: "./paths/stream/stream.yaml"
 
 components:
   parameters:
@@ -128,6 +130,8 @@ components:
       $ref: "./components/schemas/punishment-type.yaml"
     Revocation:
       $ref: "./components/schemas/revocation.yaml"
+    StreamEvent:
+      $ref: "./components/schemas/stream-event.yaml"
 
   securitySchemes:
     apiKeyAuth:
