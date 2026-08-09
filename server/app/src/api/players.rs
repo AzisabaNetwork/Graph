@@ -5,17 +5,19 @@ use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
 use graph_api::apis::players::{
-    AddPlayerFriendRequestResponse, AddPlayerFriendResponse, GetPlayerByIdResponse,
-    ListPlayerFriendRequestsResponse, ListPlayerFriendsResponse, ListPlayersResponse, Players,
+    AcceptPlayerFriendRequestResponse, AddPlayerFriendRequestResponse, AddPlayerFriendResponse,
+    GetPlayerByIdResponse, ListPlayerFriendRequestsResponse, ListPlayerFriendsResponse,
+    ListPlayersResponse, Players, RejectPlayerFriendRequestResponse,
     RemovePlayerFriendRequestResponse, RemovePlayerFriendResponse, UpdatePlayerByIdResponse,
 };
 use graph_api::models::{
-    AddPlayerFriendPathParams, AddPlayerFriendRequestPathParams, ApiKey, ApiKeyScope,
-    GetPlayerByIdPathParams, ListPlayerFriendRequestsPathParams,
-    ListPlayerFriendRequestsQueryParams, ListPlayerFriendsPathParams, ListPlayerFriendsQueryParams,
-    ListPlayers200Response, ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
-    RemovePlayerFriendPathParams, RemovePlayerFriendRequestPathParams, UpdatePlayerByIdPathParams,
-    UpdatePlayerByIdRequest,
+    AcceptPlayerFriendRequestPathParams, AddPlayerFriendPathParams,
+    AddPlayerFriendRequestPathParams, ApiKey, ApiKeyScope, GetPlayerByIdPathParams,
+    ListPlayerFriendRequestsPathParams, ListPlayerFriendRequestsQueryParams,
+    ListPlayerFriendsPathParams, ListPlayerFriendsQueryParams, ListPlayers200Response,
+    ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
+    RejectPlayerFriendRequestPathParams, RemovePlayerFriendPathParams,
+    RemovePlayerFriendRequestPathParams, UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
 };
 use headers::Host;
 use http::Method;
@@ -171,6 +173,66 @@ impl Api {
 #[async_trait]
 impl Players<String> for Api {
     type Claims = ApiKey;
+
+    async fn accept_player_friend_request(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &AcceptPlayerFriendRequestPathParams,
+    ) -> Result<AcceptPlayerFriendRequestResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
+            return Ok(
+                AcceptPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+        if !self
+            .players_exist(path_params.player_id, path_params.sender_id)
+            .await?
+        {
+            return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
+        }
+
+        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let request =
+            sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+                .bind(path_params.player_id)
+                .bind(path_params.sender_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(log_database_error)?;
+        if request.rows_affected() == 0 {
+            transaction.rollback().await.map_err(log_database_error)?;
+            return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
+        }
+
+        let (player1_id, player2_id) =
+            normalize_friendship(path_params.player_id, path_params.sender_id);
+        match sqlx::query(
+            r#"
+            INSERT INTO friendships (player1_id, player2_id)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind(player1_id)
+        .bind(player2_id)
+        .execute(&mut *transaction)
+        .await
+        {
+            Ok(_) => {}
+            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => {
+                transaction.rollback().await.map_err(log_database_error)?;
+                return Ok(
+                    AcceptPlayerFriendRequestResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSender,
+                );
+            }
+            Err(error) => return Err(log_database_error(error)),
+        }
+
+        transaction.commit().await.map_err(log_database_error)?;
+        Ok(AcceptPlayerFriendRequestResponse::Status204_TheFriendRequestWasAcceptedSuccessfully)
+    }
 
     async fn add_player_friend(
         &self,
@@ -554,6 +616,40 @@ impl Players<String> for Api {
                 ListPlayers200Response::new(items, into_nullable(next_cursor)),
             ),
         )
+    }
+
+    async fn reject_player_friend_request(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &RejectPlayerFriendRequestPathParams,
+    ) -> Result<RejectPlayerFriendRequestResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
+            return Ok(
+                RejectPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+        if !self
+            .players_exist(path_params.player_id, path_params.sender_id)
+            .await?
+        {
+            return Ok(RejectPlayerFriendRequestResponse::Status404_ThePlayer);
+        }
+
+        let request =
+            sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+                .bind(path_params.player_id)
+                .bind(path_params.sender_id)
+                .execute(&self.pool)
+                .await
+                .map_err(log_database_error)?;
+        if request.rows_affected() == 0 {
+            return Ok(RejectPlayerFriendRequestResponse::Status404_ThePlayer);
+        }
+
+        Ok(RejectPlayerFriendRequestResponse::Status204_TheFriendRequestWasRejectedSuccessfully)
     }
 
     async fn remove_player_friend(
