@@ -1,0 +1,20 @@
+type: object
+title: CrawlCreatedEvent
+description: >
+  Represents an event indicating that a crawl was created.
+  Requires the `stream:read` and `crawls:read` scopes to receive this event.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: crawl-created
+  data:
+    type: object
+    title: CrawlCreatedEventData
+    description: The data associated with the crawl.
+    required:
+      - crawl
+    properties:
+      crawl:
+        $ref: "../../openapi.yaml#/components/schemas/Crawl"

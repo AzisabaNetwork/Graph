@@ -1,0 +1,23 @@
+type: object
+title: FriendAddedEvent
+description: >
+  Represents an event indicating that a friendship was added.
+  Requires the `stream:read` scope and either the `players:read` or `players:readDetails` scope to receive this event.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: friend-added
+  data:
+    type: object
+    title: FriendAddedEventData
+    description: The data associated with the friendship.
+    required:
+      - player
+      - friend
+    properties:
+      player:
+        $ref: "../../openapi.yaml#/components/schemas/Player"
+      friend:
+        $ref: "../../openapi.yaml#/components/schemas/Player"

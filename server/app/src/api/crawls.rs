@@ -1,3 +1,4 @@
+use crate::api::stream::{crawl_created_event, crawl_deleted_event};
 use crate::api::{Api, from_nullable, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
@@ -117,6 +118,9 @@ impl Crawls<String> for Api {
         );
         crawl.description = body.description.clone();
 
+        self.publish_stream_event(crawl_created_event(crawl.clone()))
+            .await;
+
         Ok(CreateCrawlResponse::Status201_TheCrawlWasCreatedSuccessfully(crawl))
     }
 
@@ -134,6 +138,22 @@ impl Crawls<String> for Api {
             );
         }
 
+        let crawl = sqlx::query_as::<_, CrawlRecord>(
+            r#"
+            SELECT id, address, port, ping, version, protocol_version, max_players,
+                   online_players, description, favicon, crawled_at
+            FROM crawls
+            WHERE id = ?
+            "#,
+        )
+        .bind(path_params.crawl_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(log_database_error)?;
+        let Some(crawl) = crawl else {
+            return Ok(DeleteCrawlByIdResponse::Status404_TheCrawlWasNotFound);
+        };
+
         let result = sqlx::query("DELETE FROM crawls WHERE id = ?")
             .bind(path_params.crawl_id)
             .execute(&self.pool)
@@ -143,6 +163,9 @@ impl Crawls<String> for Api {
         if result.rows_affected() == 0 {
             return Ok(DeleteCrawlByIdResponse::Status404_TheCrawlWasNotFound);
         }
+
+        self.publish_stream_event(crawl_deleted_event(crawl.into_list_item()))
+            .await;
 
         Ok(DeleteCrawlByIdResponse::Status204_TheCrawlWasDeletedSuccessfully)
     }

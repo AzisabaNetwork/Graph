@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use axum::response::sse::Event;
 use axum_extra::extract::CookieJar;
 use graph_api::apis::stream::{Stream, StreamEventsResponse};
-use graph_api::models::{ApiKey, ApiKeyScope, FriendRequestAcceptedEvent, FriendRequestAcceptedEventData, FriendRequestAddedEvent, FriendRequestAddedEventData, FriendRequestRejectedEvent, FriendRequestRejectedEventData, FriendRequestRemovedEvent, FriendRequestRemovedEventData, Player, SSE, StreamEvent};
+use graph_api::models::*;
 use graph_api::types::Object;
 use headers::Host;
 use http::Method;
@@ -18,6 +18,38 @@ use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 const STREAM_EVENTS_CHANNEL: &str = "graph:stream-events";
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const REDIS_RECONNECT_DELAY: Duration = Duration::from_secs(1);
+
+pub(crate) fn crawl_created_event(crawl: Crawl) -> StreamEvent {
+    CrawlCreatedEvent::new(
+        event_type("crawl-created"),
+        CrawlCreatedEventData::new(crawl),
+    )
+    .into()
+}
+
+pub(crate) fn crawl_deleted_event(crawl: Crawl) -> StreamEvent {
+    CrawlDeletedEvent::new(
+        event_type("crawl-deleted"),
+        CrawlDeletedEventData::new(crawl),
+    )
+    .into()
+}
+
+pub(crate) fn friend_added_event(player: Player, friend: Player) -> StreamEvent {
+    FriendAddedEvent::new(
+        event_type("friend-added"),
+        FriendAddedEventData::new(player, friend),
+    )
+    .into()
+}
+
+pub(crate) fn friend_removed_event(player: Player, friend: Player) -> StreamEvent {
+    FriendRemovedEvent::new(
+        event_type("friend-removed"),
+        FriendRemovedEventData::new(player, friend),
+    )
+    .into()
+}
 
 pub(crate) fn friend_request_accepted_event(sender: Player, receiver: Player) -> StreamEvent {
     FriendRequestAcceptedEvent::new(
@@ -51,28 +83,120 @@ pub(crate) fn friend_request_removed_event(sender: Player, receiver: Player) -> 
     .into()
 }
 
+pub(crate) fn patch_note_created_event(patch_note: PatchNote) -> StreamEvent {
+    PatchNoteCreatedEvent::new(
+        event_type("patch-note-created"),
+        PatchNoteCreatedEventData::new(patch_note),
+    )
+    .into()
+}
+
+pub(crate) fn patch_note_deleted_event(patch_note: PatchNote) -> StreamEvent {
+    PatchNoteDeletedEvent::new(
+        event_type("patch-note-deleted"),
+        PatchNoteDeletedEventData::new(patch_note),
+    )
+    .into()
+}
+
+pub(crate) fn punishment_created_event(punishment: Punishment) -> StreamEvent {
+    PunishmentCreatedEvent::new(
+        event_type("punishment-created"),
+        PunishmentCreatedEventData::new(punishment),
+    )
+    .into()
+}
+
+pub(crate) fn punishment_updated_event(punishment: Punishment) -> StreamEvent {
+    PunishmentUpdatedEvent::new(
+        event_type("punishment-updated"),
+        PunishmentUpdatedEventData::new(punishment),
+    )
+    .into()
+}
+
+pub(crate) fn punishment_revoked_event(punishment: Punishment) -> StreamEvent {
+    PunishmentRevokedEvent::new(
+        event_type("punishment-revoked"),
+        PunishmentRevokedEventData::new(punishment),
+    )
+    .into()
+}
+
+pub(crate) fn punishment_proof_created_event(punishment_id: u64, proof: Proof) -> StreamEvent {
+    PunishmentProofCreatedEvent::new(
+        event_type("punishment-proof-created"),
+        PunishmentProofCreatedEventData::new(punishment_id, proof),
+    )
+    .into()
+}
+
+pub(crate) fn punishment_proof_updated_event(punishment_id: u64, proof: Proof) -> StreamEvent {
+    PunishmentProofUpdatedEvent::new(
+        event_type("punishment-proof-updated"),
+        PunishmentProofUpdatedEventData::new(punishment_id, proof),
+    )
+    .into()
+}
+
+pub(crate) fn punishment_proof_deleted_event(punishment_id: u64, proof: Proof) -> StreamEvent {
+    PunishmentProofDeletedEvent::new(
+        event_type("punishment-proof-deleted"),
+        PunishmentProofDeletedEventData::new(punishment_id, proof),
+    )
+    .into()
+}
+
 fn event_type(value: &'static str) -> Object {
     Object(serde_json::Value::String(value.to_string()))
 }
 
 fn stream_event_type(event: &StreamEvent) -> Option<&str> {
     let value = match event {
+        StreamEvent::CrawlCreatedEvent(event) => &event.r_type.0,
+        StreamEvent::CrawlDeletedEvent(event) => &event.r_type.0,
+        StreamEvent::FriendAddedEvent(event) => &event.r_type.0,
+        StreamEvent::FriendRemovedEvent(event) => &event.r_type.0,
         StreamEvent::FriendRequestAcceptedEvent(event) => &event.r_type.0,
         StreamEvent::FriendRequestAddedEvent(event) => &event.r_type.0,
         StreamEvent::FriendRequestRejectedEvent(event) => &event.r_type.0,
         StreamEvent::FriendRequestRemovedEvent(event) => &event.r_type.0,
+        StreamEvent::PatchNoteCreatedEvent(event) => &event.r_type.0,
+        StreamEvent::PatchNoteDeletedEvent(event) => &event.r_type.0,
+        StreamEvent::PunishmentCreatedEvent(event) => &event.r_type.0,
+        StreamEvent::PunishmentProofCreatedEvent(event) => &event.r_type.0,
+        StreamEvent::PunishmentProofDeletedEvent(event) => &event.r_type.0,
+        StreamEvent::PunishmentProofUpdatedEvent(event) => &event.r_type.0,
+        StreamEvent::PunishmentRevokedEvent(event) => &event.r_type.0,
+        StreamEvent::PunishmentUpdatedEvent(event) => &event.r_type.0,
     };
     value.as_str()
 }
 
 fn is_visible_to(event: &StreamEvent, api_key: &ApiKey) -> bool {
     match event {
-        StreamEvent::FriendRequestAcceptedEvent(_)
+        StreamEvent::CrawlCreatedEvent(_) | StreamEvent::CrawlDeletedEvent(_) => {
+            api_key.has_scope(&ApiKeyScope::CrawlsColonRead)
+        }
+        StreamEvent::FriendAddedEvent(_)
+        | StreamEvent::FriendRemovedEvent(_)
+        | StreamEvent::FriendRequestAcceptedEvent(_)
         | StreamEvent::FriendRequestAddedEvent(_)
         | StreamEvent::FriendRequestRejectedEvent(_)
         | StreamEvent::FriendRequestRemovedEvent(_) => {
             api_key.has_scope(&ApiKeyScope::PlayersColonRead)
                 || api_key.has_scope(&ApiKeyScope::PlayersColonReadDetails)
+        }
+        StreamEvent::PatchNoteCreatedEvent(_) | StreamEvent::PatchNoteDeletedEvent(_) => {
+            api_key.has_scope(&ApiKeyScope::PatchNotesColonRead)
+        }
+        StreamEvent::PunishmentCreatedEvent(_)
+        | StreamEvent::PunishmentProofCreatedEvent(_)
+        | StreamEvent::PunishmentProofDeletedEvent(_)
+        | StreamEvent::PunishmentProofUpdatedEvent(_)
+        | StreamEvent::PunishmentRevokedEvent(_)
+        | StreamEvent::PunishmentUpdatedEvent(_) => {
+            api_key.has_scope(&ApiKeyScope::PunishmentsColonRead)
         }
     }
 }

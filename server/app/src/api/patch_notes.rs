@@ -1,3 +1,4 @@
+use crate::api::stream::{patch_note_created_event, patch_note_deleted_event};
 use crate::api::{Api, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
@@ -195,18 +196,20 @@ impl PatchNotes<String> for Api {
             error.to_string()
         })?;
 
-        Ok(
-            CreatePatchNoteResponse::Status201_ThePatchNoteWasCreatedSuccessfully(PatchNote::new(
-                id,
-                target,
-                category,
-                title,
-                body,
-                into_nullable(author_id),
-                image_urls,
-                created_at,
-            )),
-        )
+        let patch_note = PatchNote::new(
+            id,
+            target,
+            category,
+            title,
+            body,
+            into_nullable(author_id),
+            image_urls,
+            created_at,
+        );
+        self.publish_stream_event(patch_note_created_event(patch_note.clone()))
+            .await;
+
+        Ok(CreatePatchNoteResponse::Status201_ThePatchNoteWasCreatedSuccessfully(patch_note))
     }
 
     async fn delete_patch_note_by_id(
@@ -222,6 +225,31 @@ impl PatchNotes<String> for Api {
                 DeletePatchNoteByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
+
+        let record = sqlx::query_as::<_, PatchNoteRecord>(
+            r#"
+            SELECT id, target, category, title, body, author_id, created_at
+            FROM patch_notes
+            WHERE id = ?
+            "#,
+        )
+        .bind(path_params.patch_note_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "failed to load patch note before deletion");
+            error.to_string()
+        })?;
+        let Some(record) = record else {
+            return Ok(DeletePatchNoteByIdResponse::Status404_ThePatchNoteWasNotFound);
+        };
+        let image_urls = self.load_patch_note_image_urls(&[record.id]).await?;
+        let patch_note = record.into_list_item(
+            image_urls
+                .get(&path_params.patch_note_id)
+                .cloned()
+                .unwrap_or_default(),
+        );
 
         let object_keys = sqlx::query_scalar::<_, String>(
             "SELECT object_key FROM patch_note_images WHERE patch_note_id = ? ORDER BY position",
@@ -275,6 +303,9 @@ impl PatchNotes<String> for Api {
         if result.rows_affected() == 0 {
             return Ok(DeletePatchNoteByIdResponse::Status404_ThePatchNoteWasNotFound);
         }
+
+        self.publish_stream_event(patch_note_deleted_event(patch_note))
+            .await;
 
         Ok(DeletePatchNoteByIdResponse::Status204_ThePatchNoteWasDeletedSuccessfully)
     }

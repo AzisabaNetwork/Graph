@@ -1,6 +1,6 @@
 use crate::api::stream::{
-    friend_request_accepted_event, friend_request_added_event, friend_request_rejected_event,
-    friend_request_removed_event,
+    friend_added_event, friend_removed_event, friend_request_accepted_event,
+    friend_request_added_event, friend_request_rejected_event, friend_request_removed_event,
 };
 use crate::api::{Api, from_nullable, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
@@ -242,7 +242,12 @@ impl Players<String> for Api {
         }
 
         transaction.commit().await.map_err(log_database_error)?;
-        self.publish_stream_event(friend_request_accepted_event(sender, receiver))
+        self.publish_stream_event(friend_request_accepted_event(
+            sender.clone(),
+            receiver.clone(),
+        ))
+        .await;
+        self.publish_stream_event(friend_added_event(receiver, sender))
             .await;
         Ok(AcceptPlayerFriendRequestResponse::Status204_TheFriendRequestWasAcceptedSuccessfully)
     }
@@ -309,6 +314,15 @@ impl Players<String> for Api {
         .await
         .map_err(log_database_error)?;
         transaction.commit().await.map_err(log_database_error)?;
+
+        let Some((event_friend, event_player)) = self
+            .load_friend_request_players(path_params.player_id, path_params.friend_id)
+            .await?
+        else {
+            return Err("PlayerDB profile disappeared after friendship creation".to_string());
+        };
+        self.publish_stream_event(friend_added_event(event_player, event_friend))
+            .await;
 
         let friend = self
             .load_player(path_params.friend_id, can_read_discord_id(api_key))
@@ -689,12 +703,12 @@ impl Players<String> for Api {
         if path_params.player_id == path_params.friend_id {
             return Ok(RemovePlayerFriendResponse::Status400_TheRequestIsInvalid);
         }
-        if !self
-            .players_exist(path_params.player_id, path_params.friend_id)
+        let Some((friend, player)) = self
+            .load_friend_request_players(path_params.player_id, path_params.friend_id)
             .await?
-        {
+        else {
             return Ok(RemovePlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
-        }
+        };
 
         let (player1_id, player2_id) =
             normalize_friendship(path_params.player_id, path_params.friend_id);
@@ -715,6 +729,9 @@ impl Players<String> for Api {
         if result.rows_affected() == 0 {
             return Ok(RemovePlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
         }
+
+        self.publish_stream_event(friend_removed_event(player, friend))
+            .await;
 
         Ok(RemovePlayerFriendResponse::Status204_TheFriendWasRemovedSuccessfully)
     }

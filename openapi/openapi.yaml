@@ -104,8 +104,16 @@ components:
       $ref: "./components/schemas/api-key-scope.yaml"
     Crawl:
       $ref: "./components/schemas/crawl.yaml"
+    CrawlCreatedEvent:
+      $ref: "./components/schemas/crawl-created-event.yaml"
+    CrawlDeletedEvent:
+      $ref: "./components/schemas/crawl-deleted-event.yaml"
     CrawlId:
       $ref: "./components/schemas/crawl-id.yaml"
+    FriendAddedEvent:
+      $ref: "./components/schemas/friend-added-event.yaml"
+    FriendRemovedEvent:
+      $ref: "./components/schemas/friend-removed-event.yaml"
     FriendRequestAcceptedEvent:
       $ref: "./components/schemas/friend-request-accepted-event.yaml"
     FriendRequestAddedEvent:
@@ -118,6 +126,10 @@ components:
       $ref: "./components/schemas/patch-note.yaml"
     PatchNoteCategory:
       $ref: "./components/schemas/patch-note-category.yaml"
+    PatchNoteCreatedEvent:
+      $ref: "./components/schemas/patch-note-created-event.yaml"
+    PatchNoteDeletedEvent:
+      $ref: "./components/schemas/patch-note-deleted-event.yaml"
     PatchNoteId:
       $ref: "./components/schemas/patch-note-id.yaml"
     PatchNoteTarget:
@@ -134,10 +146,22 @@ components:
       $ref: "./components/schemas/proof-id.yaml"
     Punishment:
       $ref: "./components/schemas/punishment.yaml"
+    PunishmentCreatedEvent:
+      $ref: "./components/schemas/punishment-created-event.yaml"
     PunishmentId:
       $ref: "./components/schemas/punishment-id.yaml"
+    PunishmentProofCreatedEvent:
+      $ref: "./components/schemas/punishment-proof-created-event.yaml"
+    PunishmentProofDeletedEvent:
+      $ref: "./components/schemas/punishment-proof-deleted-event.yaml"
+    PunishmentProofUpdatedEvent:
+      $ref: "./components/schemas/punishment-proof-updated-event.yaml"
+    PunishmentRevokedEvent:
+      $ref: "./components/schemas/punishment-revoked-event.yaml"
     PunishmentType:
       $ref: "./components/schemas/punishment-type.yaml"
+    PunishmentUpdatedEvent:
+      $ref: "./components/schemas/punishment-updated-event.yaml"
     Revocation:
       $ref: "./components/schemas/revocation.yaml"
     StreamEvent:

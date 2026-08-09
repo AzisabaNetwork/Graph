@@ -1,0 +1,23 @@
+type: object
+title: PunishmentProofCreatedEvent
+description: >
+  Represents an event indicating that a punishment proof was created.
+  Requires the `stream:read` and `punishments:read` scopes to receive this event.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: punishment-proof-created
+  data:
+    type: object
+    title: PunishmentProofCreatedEventData
+    description: The data associated with the punishment proof.
+    required:
+      - punishmentId
+      - proof
+    properties:
+      punishmentId:
+        $ref: "../../openapi.yaml#/components/schemas/PunishmentId"
+      proof:
+        $ref: "../../openapi.yaml#/components/schemas/Proof"

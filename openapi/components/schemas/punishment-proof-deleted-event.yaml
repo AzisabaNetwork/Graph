@@ -1,0 +1,23 @@
+type: object
+title: PunishmentProofDeletedEvent
+description: >
+  Represents an event indicating that a punishment proof was deleted.
+  Requires the `stream:read` and `punishments:read` scopes to receive this event.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: punishment-proof-deleted
+  data:
+    type: object
+    title: PunishmentProofDeletedEventData
+    description: The data associated with the punishment proof.
+    required:
+      - punishmentId
+      - proof
+    properties:
+      punishmentId:
+        $ref: "../../openapi.yaml#/components/schemas/PunishmentId"
+      proof:
+        $ref: "../../openapi.yaml#/components/schemas/Proof"

@@ -1,0 +1,20 @@
+type: object
+title: PunishmentRevokedEvent
+description: >
+  Represents an event indicating that a punishment was revoked.
+  Requires the `stream:read` and `punishments:read` scopes to receive this event.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: punishment-revoked
+  data:
+    type: object
+    title: PunishmentRevokedEventData
+    description: The data associated with the punishment.
+    required:
+      - punishment
+    properties:
+      punishment:
+        $ref: "../../openapi.yaml#/components/schemas/Punishment"

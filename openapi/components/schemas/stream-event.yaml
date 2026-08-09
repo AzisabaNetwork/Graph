@@ -1,7 +1,19 @@
 title: StreamEvent
 description: Represents a stream event.
 oneOf:
+  - $ref: "../../openapi.yaml#/components/schemas/CrawlCreatedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/CrawlDeletedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/FriendAddedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/FriendRemovedEvent"
   - $ref: "../../openapi.yaml#/components/schemas/FriendRequestAcceptedEvent"
   - $ref: "../../openapi.yaml#/components/schemas/FriendRequestAddedEvent"
   - $ref: "../../openapi.yaml#/components/schemas/FriendRequestRejectedEvent"
   - $ref: "../../openapi.yaml#/components/schemas/FriendRequestRemovedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PatchNoteCreatedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PatchNoteDeletedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PunishmentCreatedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PunishmentProofCreatedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PunishmentProofDeletedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PunishmentProofUpdatedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PunishmentRevokedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/PunishmentUpdatedEvent"

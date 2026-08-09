@@ -1,3 +1,7 @@
+use crate::api::stream::{
+    punishment_created_event, punishment_proof_created_event, punishment_proof_deleted_event,
+    punishment_proof_updated_event, punishment_revoked_event, punishment_updated_event,
+};
 use crate::api::{Api, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
 use crate::pagination::Cursor;
@@ -462,6 +466,8 @@ impl Punishments<String> for Api {
             .fetch_punishment(id)
             .await?
             .ok_or_else(|| "created punishment disappeared".to_string())?;
+        self.publish_stream_event(punishment_created_event(punishment.clone()))
+            .await;
         Ok(CreatePunishmentResponse::Status201_ThePunishmentWasCreatedSuccessfully(punishment))
     }
 
@@ -661,6 +667,8 @@ impl Punishments<String> for Api {
             .fetch_punishment(id)
             .await?
             .ok_or_else(|| "updated punishment disappeared".to_string())?;
+        self.publish_stream_event(punishment_updated_event(value.clone()))
+            .await;
         Ok(UpdatePunishmentByIdResponse::Status200_ThePunishmentWasUpdatedSuccessfully(value))
     }
 
@@ -713,6 +721,12 @@ impl Punishments<String> for Api {
         .await
         .map_err(db_error)?;
         tx.commit().await.map_err(db_error)?;
+        let punishment = self
+            .fetch_punishment(id)
+            .await?
+            .ok_or_else(|| "revoked punishment disappeared".to_string())?;
+        self.publish_stream_event(punishment_revoked_event(punishment))
+            .await;
         Ok(DeletePunishmentByIdResponse::Status204_ThePunishmentWasRevokedSuccessfully)
     }
 
@@ -785,6 +799,11 @@ impl Punishments<String> for Api {
             .fetch_proof(id, proof_id)
             .await?
             .ok_or_else(|| "created proof disappeared".to_string())?;
+        self.publish_stream_event(punishment_proof_created_event(
+            path.punishment_id,
+            proof.clone(),
+        ))
+        .await;
         Ok(CreatePunishmentProofResponse::Status201_TheProofWasCreatedSuccessfully(proof))
     }
 
@@ -863,6 +882,11 @@ impl Punishments<String> for Api {
             .fetch_proof(punishment_id, proof_id)
             .await?
             .ok_or_else(|| "updated proof disappeared".to_string())?;
+        self.publish_stream_event(punishment_proof_updated_event(
+            path.punishment_id,
+            proof.clone(),
+        ))
+        .await;
         Ok(UpdatePunishmentProofByIdResponse::Status200_TheProofWasUpdatedSuccessfully(proof))
     }
 
@@ -885,6 +909,12 @@ impl Punishments<String> for Api {
                 DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound,
             );
         };
+        let proof = self.fetch_proof(punishment_id, proof_id).await?;
+        let Some(proof) = proof else {
+            return Ok(
+                DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound,
+            );
+        };
         let affected = sqlx::query("DELETE FROM proofs WHERE id = ? AND punish_id = ?")
             .bind(proof_id)
             .bind(punishment_id)
@@ -895,6 +925,8 @@ impl Punishments<String> for Api {
         if affected == 0 {
             Ok(DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound)
         } else {
+            self.publish_stream_event(punishment_proof_deleted_event(path.punishment_id, proof))
+                .await;
             Ok(DeletePunishmentProofByIdResponse::Status204_TheProofWasDeletedSuccessfully)
         }
     }

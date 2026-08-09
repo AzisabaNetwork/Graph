@@ -1,0 +1,20 @@
+type: object
+title: PatchNoteCreatedEvent
+description: >
+  Represents an event indicating that a patch note was created.
+  Requires the `stream:read` and `patch-notes:read` scopes to receive this event.
+required:
+  - type
+  - data
+properties:
+  type:
+    const: patch-note-created
+  data:
+    type: object
+    title: PatchNoteCreatedEventData
+    description: The data associated with the patch note.
+    required:
+      - patchNote
+    properties:
+      patchNote:
+        $ref: "../../openapi.yaml#/components/schemas/PatchNote"
