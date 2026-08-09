@@ -43,6 +43,10 @@ paths:
     $ref: "./paths/players/players.yaml"
   /players/{playerId}:
     $ref: "./paths/players/players-by-id.yaml"
+  /players/{playerId}/friend-requests:
+    $ref: "./paths/players/players-by-id-friend-requests.yaml"
+  /players/{playerId}/friend-requests/{senderId}:
+    $ref: "./paths/players/players-by-id-friend-requests-by-id.yaml"
   /players/{playerId}/friends:
     $ref: "./paths/players/players-by-id-friends.yaml"
   /players/{playerId}/friends/{friendId}:
@@ -72,6 +76,8 @@ components:
       $ref: "./components/parameters/proof-id.yaml"
     PunishmentId:
       $ref: "./components/parameters/punishment-id.yaml"
+    SenderId:
+      $ref: "./components/parameters/sender-id.yaml"
 
   responses:
     BadRequest:
