@@ -1,4 +1,5 @@
 type: string
+title: PunishmentType
 description: The type of punishment.
 enum:
   - ban

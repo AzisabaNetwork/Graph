@@ -1,4 +1,5 @@
 type: string
+title: ApiKeyId
 description: The public identifier of the API key.
 minLength: 16
 maxLength: 16

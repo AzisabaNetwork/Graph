@@ -1,4 +1,5 @@
 type: object
+title: Revocation
 description: Represents a punishment revocation.
 required:
   - id

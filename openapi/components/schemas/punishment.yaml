@@ -1,4 +1,5 @@
 type: object
+title: Punishment
 description: Represents a punishment.
 required:
   - id

@@ -1,4 +1,5 @@
 type: object
+title: PatchNote
 description: Represents a patch note.
 required:
   - id

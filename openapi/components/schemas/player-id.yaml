@@ -1,3 +1,4 @@
 type: string
-format: uuid
+title: PlayerId
 description: The unique identifier of the player.
+format: uuid

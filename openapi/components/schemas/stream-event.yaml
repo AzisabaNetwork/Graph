@@ -1,6 +1,7 @@
+title: StreamEvent
 description: Represents a stream event.
 oneOf:
-  - $ref: "./friend-request-accepted-event.yaml"
-  - $ref: "./friend-request-added-event.yaml"
-  - $ref: "./friend-request-rejected-event.yaml"
-  - $ref: "./friend-request-removed-event.yaml"
+  - $ref: "../../openapi.yaml#/components/schemas/FriendRequestAcceptedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/FriendRequestAddedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/FriendRequestRejectedEvent"
+  - $ref: "../../openapi.yaml#/components/schemas/FriendRequestRemovedEvent"

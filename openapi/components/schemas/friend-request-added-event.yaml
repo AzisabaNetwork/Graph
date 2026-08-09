@@ -1,4 +1,5 @@
 type: object
+title: FriendRequestAddedEvent
 description: >
   Represents an event indicating that a friend request was added.
   Requires the `stream:read` and `players:read` scopes to receive this event.

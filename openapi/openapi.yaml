@@ -106,6 +106,14 @@ components:
       $ref: "./components/schemas/crawl.yaml"
     CrawlId:
       $ref: "./components/schemas/crawl-id.yaml"
+    FriendRequestAcceptedEvent:
+      $ref: "./components/schemas/friend-request-accepted-event.yaml"
+    FriendRequestAddedEvent:
+      $ref: "./components/schemas/friend-request-added-event.yaml"
+    FriendRequestRejectedEvent:
+      $ref: "./components/schemas/friend-request-rejected-event.yaml"
+    FriendRequestRemovedEvent:
+      $ref: "./components/schemas/friend-request-removed-event.yaml"
     PatchNote:
       $ref: "./components/schemas/patch-note.yaml"
     PatchNoteCategory:

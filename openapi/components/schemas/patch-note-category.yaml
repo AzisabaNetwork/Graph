@@ -1,4 +1,5 @@
 type: string
+title: PatchNoteCategory
 description: The category of the patch note.
 enum:
   - balance

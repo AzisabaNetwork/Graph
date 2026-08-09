@@ -1,4 +1,5 @@
 type: object
+title: Crawl
 description: Represents a Minecraft server crawl.
 required:
   - id

@@ -1,3 +1,4 @@
 type: string
-format: uuid
+title: CrawlId
 description: The unique identifier of the crawl.
+format: uuid

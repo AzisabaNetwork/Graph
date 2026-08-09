@@ -1,4 +1,5 @@
 type: object
+title: Proof
 description: Represents punishment evidence.
 required:
   - id

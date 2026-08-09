@@ -1,3 +1,4 @@
 type: string
-format: uuid
+title: PatchNoteId
 description: The unique identifier of the patch note.
+format: uuid

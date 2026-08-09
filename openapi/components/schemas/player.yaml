@@ -1,4 +1,5 @@
 type: object
+title: Player
 description: Represents a player profile.
 required:
   - id

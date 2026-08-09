@@ -1,4 +1,5 @@
 type: string
+title: PatchNoteTarget
 description: The target of the patch note.
 enum:
   - general

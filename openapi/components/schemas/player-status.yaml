@@ -1,4 +1,5 @@
 type: string
+title: PlayerStatus
 description: The online status of the player.
 enum:
   - online

@@ -1,4 +1,5 @@
 type: object
+title: ApiKey
 description: Represents an API key.
 required:
   - name

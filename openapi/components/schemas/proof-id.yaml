@@ -1,4 +1,5 @@
 type: integer
+title: ProofId
+description: The unique identifier of the proof.
 format: int64
 minimum: 1
-description: The unique identifier of the proof.
