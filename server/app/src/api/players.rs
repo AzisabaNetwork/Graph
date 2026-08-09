@@ -5,19 +5,22 @@ use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
 use graph_api::apis::players::{
-    AddPlayerFriendResponse, GetPlayerByIdResponse, ListPlayerFriendsResponse, ListPlayersResponse,
-    Players, RemovePlayerFriendResponse, UpdatePlayerByIdResponse,
+    AddPlayerFriendRequestResponse, AddPlayerFriendResponse, GetPlayerByIdResponse,
+    ListPlayerFriendRequestsResponse, ListPlayerFriendsResponse, ListPlayersResponse, Players,
+    RemovePlayerFriendRequestResponse, RemovePlayerFriendResponse, UpdatePlayerByIdResponse,
 };
 use graph_api::models::{
-    AddPlayerFriendPathParams, ApiKey, ApiKeyScope, GetPlayerByIdPathParams,
-    ListPlayerFriendsPathParams, ListPlayerFriendsQueryParams, ListPlayers200Response,
-    ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
-    RemovePlayerFriendPathParams, UpdatePlayerByIdPathParams, UpdatePlayerByIdRequest,
+    AddPlayerFriendPathParams, AddPlayerFriendRequestPathParams, ApiKey, ApiKeyScope,
+    GetPlayerByIdPathParams, ListPlayerFriendRequestsPathParams,
+    ListPlayerFriendRequestsQueryParams, ListPlayerFriendsPathParams, ListPlayerFriendsQueryParams,
+    ListPlayers200Response, ListPlayers200ResponseItemsInner, ListPlayersQueryParams, PlayerStatus,
+    RemovePlayerFriendPathParams, RemovePlayerFriendRequestPathParams, UpdatePlayerByIdPathParams,
+    UpdatePlayerByIdRequest,
 };
 use headers::Host;
 use http::Method;
 use sqlx::{FromRow, MySql, QueryBuilder};
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
@@ -36,6 +39,16 @@ struct PlayerRecord {
 }
 
 impl PlayerRecord {
+    fn empty(id: Uuid) -> Self {
+        Self {
+            id,
+            discord_id: None,
+            status: PlayerStatus::Offline.to_string(),
+            current_server: None,
+            bio: None,
+        }
+    }
+
     fn into_list_item(
         self,
         username: String,
@@ -57,6 +70,101 @@ impl PlayerRecord {
             into_nullable(current_server),
             into_nullable(bio),
         )
+    }
+}
+
+impl Api {
+    async fn load_player_record(&self, id: Uuid) -> Result<PlayerRecord, String> {
+        Ok(sqlx::query_as::<_, PlayerRecord>(
+            r#"
+            SELECT id, discord_id, status, current_server, bio
+            FROM players
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(log_database_error)?
+        .unwrap_or_else(|| PlayerRecord::empty(id)))
+    }
+
+    async fn load_player(
+        &self,
+        id: Uuid,
+        include_details: bool,
+    ) -> Result<Option<ListPlayers200ResponseItemsInner>, String> {
+        let Some(username) = self.player_db.get_username_by_uuid(id).await? else {
+            return Ok(None);
+        };
+        let record = self.load_player_record(id).await?;
+        Ok(Some(record.into_list_item(username, include_details)))
+    }
+
+    async fn load_players(
+        &self,
+        ids: &[Uuid],
+        include_details: bool,
+    ) -> Result<Vec<ListPlayers200ResponseItemsInner>, String> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<MySql>::new(
+            "SELECT id, discord_id, status, current_server, bio FROM players WHERE id IN (",
+        );
+        let mut separated = query.separated(", ");
+        for id in ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+
+        let records = query
+            .build_query_as::<PlayerRecord>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(log_database_error)?;
+        let mut records = records
+            .into_iter()
+            .map(|record| (record.id, record))
+            .collect::<HashMap<_, _>>();
+
+        let mut tasks = JoinSet::new();
+        for (index, id) in ids.iter().copied().enumerate() {
+            let player_db = self.player_db.clone();
+            let record = records
+                .remove(&id)
+                .unwrap_or_else(|| PlayerRecord::empty(id));
+            tasks.spawn(async move {
+                let username = player_db.get_username_by_uuid(id).await?;
+                Ok::<_, PlayerDbError>((index, record, username))
+            });
+        }
+
+        let mut items = std::iter::repeat_with(|| None)
+            .take(ids.len())
+            .collect::<Vec<_>>();
+        while let Some(result) = tasks.join_next().await {
+            let (index, record, username) = result
+                .map_err(|error| format!("PlayerDB lookup task failed: {error}"))?
+                .map_err(|error| {
+                    tracing::error!(%error, "PlayerDB profile lookup failed");
+                    error.to_string()
+                })?;
+            if let Some(username) = username {
+                items[index] = Some(record.into_list_item(username, include_details));
+            }
+        }
+
+        Ok(items.into_iter().flatten().collect())
+    }
+
+    async fn players_exist(&self, first: Uuid, second: Uuid) -> Result<bool, String> {
+        let (first, second) = tokio::try_join!(
+            self.player_db.get_username_by_uuid(first),
+            self.player_db.get_username_by_uuid(second),
+        )?;
+        Ok(first.is_some() && second.is_some())
     }
 }
 
@@ -82,17 +190,17 @@ impl Players<String> for Api {
             return Ok(AddPlayerFriendResponse::Status400_TheRequestIsInvalid);
         }
 
-        let Some(_) = self
-            .player_db
-            .get_username_by_uuid(path_params.friend_id)
+        if !self
+            .players_exist(path_params.player_id, path_params.friend_id)
             .await?
-        else {
+        {
             return Ok(AddPlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
-        };
+        }
 
         let (player1_id, player2_id) =
             normalize_friendship(path_params.player_id, path_params.friend_id);
 
+        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
         match sqlx::query(
             r#"
             INSERT INTO friendships (player1_id, player2_id)
@@ -101,7 +209,7 @@ impl Players<String> for Api {
         )
         .bind(player1_id)
         .bind(player2_id)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         {
             Ok(_) => {}
@@ -111,36 +219,92 @@ impl Players<String> for Api {
             Err(error) => return Err(log_database_error(error)),
         }
 
-        let record = sqlx::query_as::<_, PlayerRecord>(
+        sqlx::query(
             r#"
-            SELECT id, discord_id, status, current_server, bio
-            FROM players
-            WHERE id = ?
+            DELETE FROM friend_requests
+            WHERE (player_id = ? AND sender_id = ?)
+               OR (player_id = ? AND sender_id = ?)
             "#,
         )
+        .bind(path_params.player_id)
         .bind(path_params.friend_id)
-        .fetch_optional(&self.pool)
+        .bind(path_params.friend_id)
+        .bind(path_params.player_id)
+        .execute(&mut *transaction)
         .await
-        .map_err(log_database_error)?
-        .unwrap_or(PlayerRecord {
-            id: path_params.friend_id,
-            discord_id: None,
-            status: "offline".to_string(),
-            current_server: None,
-            bio: None,
-        });
+        .map_err(log_database_error)?;
+        transaction.commit().await.map_err(log_database_error)?;
 
-        let username = self
-            .player_db
-            .get_username_by_uuid(record.id)
+        let friend = self
+            .load_player(path_params.friend_id, can_read_discord_id(api_key))
             .await?
-            .ok_or_else(|| "PlayerDB profile not found".to_string())?;
+            .ok_or_else(|| "PlayerDB profile disappeared after friendship creation".to_string())?;
 
-        Ok(
-            AddPlayerFriendResponse::Status201_TheFriendWasAddedSuccessfully(
-                record.into_list_item(username, can_read_discord_id(api_key)),
-            ),
+        Ok(AddPlayerFriendResponse::Status201_TheFriendWasAddedSuccessfully(friend))
+    }
+
+    async fn add_player_friend_request(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &AddPlayerFriendRequestPathParams,
+    ) -> Result<AddPlayerFriendRequestResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
+            return Ok(
+                AddPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
+        if path_params.player_id == path_params.sender_id {
+            return Ok(
+                AddPlayerFriendRequestResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSender,
+            );
+        }
+        if !self
+            .players_exist(path_params.player_id, path_params.sender_id)
+            .await?
+        {
+            return Ok(AddPlayerFriendRequestResponse::Status404_ThePlayerOrSenderWasNotFound);
+        }
+
+        let (player1_id, player2_id) =
+            normalize_friendship(path_params.player_id, path_params.sender_id);
+        let already_friends = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM friendships
+                WHERE player1_id = ? AND player2_id = ?
+            )
+            "#,
         )
+        .bind(player1_id)
+        .bind(player2_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(log_database_error)?;
+        if already_friends {
+            return Ok(
+                AddPlayerFriendRequestResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSender,
+            );
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO friend_requests (player_id, sender_id)
+            VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE created_at = created_at
+            "#,
+        )
+        .bind(path_params.player_id)
+        .bind(path_params.sender_id)
+        .execute(&self.pool)
+        .await
+        .map_err(log_database_error)?;
+
+        Ok(AddPlayerFriendRequestResponse::Status204_TheFriendRequestWasAddedSuccessfully)
     }
 
     async fn get_player_by_id(
@@ -157,30 +321,74 @@ impl Players<String> for Api {
             );
         }
 
-        let record = sqlx::query_as::<_, PlayerRecord>(
-            r#"
-            SELECT id, discord_id, status, current_server, bio
-            FROM players
-            WHERE id = ?
-            "#,
-        )
-        .bind(path_params.player_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(log_database_error)?;
-
-        let Some(record) = record else {
-            return Ok(GetPlayerByIdResponse::Status404_ThePlayerWasNotFound);
-        };
-        let Some(username) = self.player_db.get_username_by_uuid(record.id).await? else {
+        let Some(player) = self
+            .load_player(path_params.player_id, can_read_discord_id(api_key))
+            .await?
+        else {
             return Ok(GetPlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
-        Ok(
-            GetPlayerByIdResponse::Status200_ThePlayerWasRetrievedSuccessfully(
-                record.into_list_item(username, can_read_discord_id(api_key)),
-            ),
-        )
+        Ok(GetPlayerByIdResponse::Status200_ThePlayerWasRetrievedSuccessfully(player))
+    }
+
+    async fn list_player_friend_requests(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &ListPlayerFriendRequestsPathParams,
+        query_params: &ListPlayerFriendRequestsQueryParams,
+    ) -> Result<ListPlayerFriendRequestsResponse, String> {
+        if !can_read_players(api_key) {
+            return Ok(
+                ListPlayerFriendRequestsResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+        if self
+            .player_db
+            .get_username_by_uuid(path_params.player_id)
+            .await?
+            .is_none()
+        {
+            return Ok(ListPlayerFriendRequestsResponse::Status404_ThePlayerWasNotFound);
+        }
+
+        let limit = query_params.limit.unwrap_or(DEFAULT_PLAYERS_LIMIT);
+        if !(1..=MAX_PLAYERS_LIMIT).contains(&limit) {
+            return Ok(ListPlayerFriendRequestsResponse::Status400_TheRequestIsInvalid);
+        }
+        let limit = usize::from(limit);
+        let cursor = match decode_player_cursor(query_params.cursor.as_deref()) {
+            Ok(cursor) => cursor,
+            Err(()) => {
+                return Ok(ListPlayerFriendRequestsResponse::Status400_TheRequestIsInvalid);
+            }
+        };
+
+        let mut query =
+            QueryBuilder::<MySql>::new("SELECT sender_id FROM friend_requests WHERE player_id = ");
+        query.push_bind(path_params.player_id);
+        if let Some(cursor) = cursor {
+            query.push(" AND sender_id > ").push_bind(cursor.value);
+        }
+        query
+            .push(" ORDER BY sender_id ASC LIMIT ")
+            .push_bind((limit + 1) as u64);
+
+        let mut ids = query
+            .build_query_scalar::<Uuid>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(log_database_error)?;
+        let next_cursor = take_next_cursor(&mut ids, limit)?;
+        let items = self
+            .load_players(&ids, can_read_discord_id(api_key))
+            .await?;
+
+        Ok(ListPlayerFriendRequestsResponse::Status200_ThePlayer(
+            ListPlayers200Response::new(items, into_nullable(next_cursor)),
+        ))
     }
 
     async fn list_player_friends(
@@ -197,119 +405,55 @@ impl Players<String> for Api {
                 ListPlayerFriendsResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-
+        if self
+            .player_db
+            .get_username_by_uuid(path_params.player_id)
+            .await?
+            .is_none()
+        {
+            return Ok(ListPlayerFriendsResponse::Status404_ThePlayerWasNotFound);
+        }
         let limit = query_params.limit.unwrap_or(DEFAULT_PLAYERS_LIMIT);
-
         if !(1..=MAX_PLAYERS_LIMIT).contains(&limit) {
             return Ok(ListPlayerFriendsResponse::Status400_TheRequestIsInvalid);
         }
-
-        let limit = limit as usize;
-
-        let cursor = match query_params.cursor.as_deref() {
-            Some(cursor) => match PlayerCursor::decode(cursor) {
-                Ok(cursor) if cursor.value == cursor.tie_breaker => Some(cursor),
-                _ => {
-                    return Ok(ListPlayerFriendsResponse::Status400_TheRequestIsInvalid);
-                }
-            },
-            None => None,
+        let limit = usize::from(limit);
+        let cursor = match decode_player_cursor(query_params.cursor.as_deref()) {
+            Ok(cursor) => cursor,
+            Err(()) => return Ok(ListPlayerFriendsResponse::Status400_TheRequestIsInvalid),
         };
 
         let mut query = QueryBuilder::<MySql>::new(
             r#"
-            SELECT
-                p.id,
-                p.discord_id,
-                p.status,
-                p.current_server,
-                p.bio
-            FROM friendships f
-            JOIN players p
-                ON (
-                    (f.player1_id =
+            SELECT CASE
+                WHEN player1_id =
             "#,
         );
-
         query
             .push_bind(path_params.player_id)
-            .push(" AND p.id = f.player2_id) OR (f.player2_id = ")
+            .push(
+                " THEN player2_id ELSE player1_id END AS friend_id \
+                   FROM friendships WHERE player1_id = ",
+            )
             .push_bind(path_params.player_id)
-            .push(" AND p.id = f.player1_id)")
-            .push(" WHERE 1 = 1");
-
+            .push(" OR player2_id = ")
+            .push_bind(path_params.player_id);
         if let Some(cursor) = cursor {
-            query.push(" AND p.id > ").push_bind(cursor.value);
+            query.push(" HAVING friend_id > ").push_bind(cursor.value);
         }
-
         query
-            .push(" ORDER BY p.id ASC LIMIT ")
+            .push(" ORDER BY friend_id ASC LIMIT ")
             .push_bind((limit + 1) as u64);
 
-        let mut rows = query
-            .build_query_as::<PlayerRecord>()
+        let mut ids = query
+            .build_query_scalar::<Uuid>()
             .fetch_all(&self.pool)
             .await
             .map_err(log_database_error)?;
-
-        let next_cursor = if rows.len() > limit {
-            rows.pop();
-
-            let last = rows.last().expect("page must include at least one row");
-
-            Some(
-                PlayerCursor {
-                    value: last.id,
-                    tie_breaker: last.id,
-                }
-                .encode()
-                .map_err(|error| {
-                    tracing::error!(?error, "failed to encode player friends cursor");
-                    "failed to encode player friends cursor".to_string()
-                })?,
-            )
-        } else {
-            None
-        };
-
-        let mut tasks = JoinSet::new();
-
-        let mut items = std::iter::repeat_with(|| None)
-            .take(rows.len())
-            .collect::<Vec<_>>();
-
-        for (index, record) in rows.into_iter().enumerate() {
-            let player_db = self.player_db.clone();
-
-            tasks.spawn(async move {
-                let username = player_db.get_username_by_uuid(record.id).await?;
-
-                Ok::<_, PlayerDbError>((index, record, username))
-            });
-        }
-
-        while let Some(result) = tasks.join_next().await {
-            let (index, record, username) = result
-                .map_err(|error| format!("PlayerDB lookup task failed: {error}"))?
-                .map_err(|error| {
-                    tracing::error!(%error, "PlayerDB profile lookup failed");
-                    error.to_string()
-                })?;
-
-            let username = username.ok_or_else(|| {
-                format!(
-                    "PlayerDB profile was not found for tracked player {}",
-                    record.id
-                )
-            })?;
-
-            items[index] = Some(record.into_list_item(username, can_read_discord_id(api_key)));
-        }
-
-        let items = items
-            .into_iter()
-            .map(|player| player.expect("every PlayerDB lookup task must produce a player"))
-            .collect();
+        let next_cursor = take_next_cursor(&mut ids, limit)?;
+        let items = self
+            .load_players(&ids, can_read_discord_id(api_key))
+            .await?;
 
         Ok(ListPlayerFriendsResponse::Status200_ThePlayer(
             ListPlayers200Response::new(items, into_nullable(next_cursor)),
@@ -325,12 +469,12 @@ impl Players<String> for Api {
         query_params: &ListPlayersQueryParams,
     ) -> Result<ListPlayersResponse, String> {
         if !can_read_players(api_key) {
-            return Ok(ListPlayersResponse::Status403_TheAPIKeyLacksTheRequiredScope);
+            return Ok(ListPlayersResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
 
         let can_read_discord_id = can_read_discord_id(api_key);
         if query_params.discord_id.is_some() && !can_read_discord_id {
-            return Ok(ListPlayersResponse::Status403_TheAPIKeyLacksTheRequiredScope);
+            return Ok(ListPlayersResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
 
         let limit = query_params.limit.unwrap_or(DEFAULT_PLAYERS_LIMIT);
@@ -402,36 +546,8 @@ impl Players<String> for Api {
             None
         };
 
-        let mut tasks = JoinSet::new();
-        let mut items = std::iter::repeat_with(|| None)
-            .take(rows.len())
-            .collect::<Vec<_>>();
-        for (index, record) in rows.into_iter().enumerate() {
-            let player_db = self.player_db.clone();
-            tasks.spawn(async move {
-                let username = player_db.get_username_by_uuid(record.id).await?;
-                Ok::<_, PlayerDbError>((index, record, username))
-            });
-        }
-        while let Some(result) = tasks.join_next().await {
-            let (index, record, username) = result
-                .map_err(|error| format!("PlayerDB lookup task failed: {error}"))?
-                .map_err(|error| {
-                    tracing::error!(%error, "PlayerDB profile lookup failed");
-                    error.to_string()
-                })?;
-            let username = username.ok_or_else(|| {
-                format!(
-                    "PlayerDB profile was not found for tracked player {}",
-                    record.id
-                )
-            })?;
-            items[index] = Some(record.into_list_item(username, can_read_discord_id));
-        }
-        let items = items
-            .into_iter()
-            .map(|player| player.expect("every PlayerDB lookup task must produce a player"))
-            .collect();
+        let ids = rows.iter().map(|record| record.id).collect::<Vec<_>>();
+        let items = self.load_players(&ids, can_read_discord_id).await?;
 
         Ok(
             ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
@@ -452,6 +568,16 @@ impl Players<String> for Api {
             return Ok(
                 RemovePlayerFriendResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
+        }
+
+        if path_params.player_id == path_params.friend_id {
+            return Ok(RemovePlayerFriendResponse::Status400_TheRequestIsInvalid);
+        }
+        if !self
+            .players_exist(path_params.player_id, path_params.friend_id)
+            .await?
+        {
+            return Ok(RemovePlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
         }
 
         let (player1_id, player2_id) =
@@ -475,6 +601,36 @@ impl Players<String> for Api {
         }
 
         Ok(RemovePlayerFriendResponse::Status204_TheFriendWasRemovedSuccessfully)
+    }
+
+    async fn remove_player_friend_request(
+        &self,
+        _method: &Method,
+        _host: &Host,
+        _cookies: &CookieJar,
+        api_key: &Self::Claims,
+        path_params: &RemovePlayerFriendRequestPathParams,
+    ) -> Result<RemovePlayerFriendRequestResponse, String> {
+        if !api_key.has_scope(&ApiKeyScope::PlayersColonWrite) {
+            return Ok(
+                RemovePlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+        if !self
+            .players_exist(path_params.player_id, path_params.sender_id)
+            .await?
+        {
+            return Ok(RemovePlayerFriendRequestResponse::Status404_ThePlayerOrSenderWasNotFound);
+        }
+
+        sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+            .bind(path_params.player_id)
+            .bind(path_params.sender_id)
+            .execute(&self.pool)
+            .await
+            .map_err(log_database_error)?;
+
+        Ok(RemovePlayerFriendRequestResponse::Status204_TheFriendRequestWasRemovedSuccessfully)
     }
 
     async fn update_player_by_id(
@@ -520,9 +676,7 @@ impl Players<String> for Api {
             .get_username_by_uuid(path_params.player_id)
             .await?
         else {
-            return Ok(
-                UpdatePlayerByIdResponse::Status404_NoMinecraftUserExistsWithTheSpecifiedPlayerID,
-            );
+            return Ok(UpdatePlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
         let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
@@ -594,6 +748,34 @@ fn normalize_friendship(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
     if a < b { (a, b) } else { (b, a) }
 }
 
+fn decode_player_cursor(value: Option<&str>) -> Result<Option<PlayerCursor>, ()> {
+    match value {
+        Some(value) => match PlayerCursor::decode(value) {
+            Ok(cursor) if cursor.value == cursor.tie_breaker => Ok(Some(cursor)),
+            _ => Err(()),
+        },
+        None => Ok(None),
+    }
+}
+
+fn take_next_cursor(ids: &mut Vec<Uuid>, limit: usize) -> Result<Option<String>, String> {
+    if ids.len() <= limit {
+        return Ok(None);
+    }
+    ids.pop();
+    let last = *ids.last().expect("page must include at least one ID");
+    PlayerCursor {
+        value: last,
+        tie_breaker: last,
+    }
+    .encode()
+    .map(Some)
+    .map_err(|error| {
+        tracing::error!(?error, "failed to encode player cursor");
+        "failed to encode player cursor".to_string()
+    })
+}
+
 fn log_database_error(error: sqlx::Error) -> String {
     tracing::error!(?error, "player database operation failed");
     error.to_string()
@@ -623,6 +805,50 @@ mod tests {
             player.discord_id,
             Nullable::Present("123456789012345678".to_string())
         );
+    }
+
+    #[test]
+    fn empty_player_record_uses_public_defaults() {
+        let id = Uuid::new_v4();
+        let player = PlayerRecord::empty(id).into_list_item("Steve".to_string(), true);
+
+        assert_eq!(player.id, id);
+        assert_eq!(player.username, "Steve");
+        assert_eq!(player.status, PlayerStatus::Offline.to_string());
+        assert_eq!(player.discord_id, Nullable::Null);
+        assert_eq!(player.current_server, Nullable::Null);
+        assert_eq!(player.bio, Nullable::Null);
+    }
+
+    #[test]
+    fn player_cursor_helpers_round_trip() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        let third = Uuid::from_u128(3);
+        let mut ids = vec![first, second, third];
+
+        let encoded = take_next_cursor(&mut ids, 2)
+            .expect("cursor must be encoded")
+            .expect("another page must be available");
+        let cursor = decode_player_cursor(Some(&encoded))
+            .expect("cursor must be valid")
+            .expect("cursor must be present");
+
+        assert_eq!(ids, vec![first, second]);
+        assert_eq!(cursor.value, second);
+        assert_eq!(cursor.tie_breaker, second);
+    }
+
+    #[test]
+    fn player_cursor_rejects_different_tie_breaker() {
+        let encoded = PlayerCursor {
+            value: Uuid::from_u128(1),
+            tie_breaker: Uuid::from_u128(2),
+        }
+        .encode()
+        .expect("cursor must be encoded");
+
+        assert!(decode_player_cursor(Some(&encoded)).is_err());
     }
 
     fn player_record() -> PlayerRecord {

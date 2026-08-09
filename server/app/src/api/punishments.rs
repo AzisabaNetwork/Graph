@@ -599,7 +599,7 @@ impl Punishments<String> for Api {
             items.push(self.record_into_api(row, row_proofs)?);
         }
         Ok(
-            graph_api::apis::punishments::ListPunishmentsResponse::Status200_PunishmentsWereRetrievedSuccessfully(
+            graph_api::apis::punishments::ListPunishmentsResponse::Status200_ThePunishmentsWereRetrievedSuccessfully(
                 ListPunishments200Response::new(items, into_nullable(next_cursor)),
             ),
         )
@@ -747,7 +747,7 @@ impl Punishments<String> for Api {
             return Ok(ListPunishmentProofsResponse::Status404_ThePunishmentWasNotFound);
         }
         Ok(
-            ListPunishmentProofsResponse::Status200_ProofsWereRetrievedSuccessfully(
+            ListPunishmentProofsResponse::Status200_TheProofsWereRetrievedSuccessfully(
                 self.load_proofs(id).await?,
             ),
         )
@@ -1173,7 +1173,7 @@ mod tests {
             .await
             .unwrap()
         {
-            graph_api::apis::punishments::ListPunishmentsResponse::Status200_PunishmentsWereRetrievedSuccessfully(value) => value,
+            graph_api::apis::punishments::ListPunishmentsResponse::Status200_ThePunishmentsWereRetrievedSuccessfully(value) => value,
             response => panic!("unexpected response: {response:?}"),
         };
         assert_eq!(page_one.items.len(), 1);
@@ -1199,7 +1199,7 @@ mod tests {
             .await
             .unwrap()
         {
-            graph_api::apis::punishments::ListPunishmentsResponse::Status200_PunishmentsWereRetrievedSuccessfully(value) => value,
+            graph_api::apis::punishments::ListPunishmentsResponse::Status200_ThePunishmentsWereRetrievedSuccessfully(value) => value,
             response => panic!("unexpected response: {response:?}"),
         };
         assert_eq!(page_two.items.len(), 1);

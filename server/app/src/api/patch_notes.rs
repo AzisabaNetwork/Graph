@@ -100,10 +100,6 @@ impl PatchNotes<String> for Api {
             author_id,
             images,
         } = request;
-        let author_id = author_id.and_then(|author_id| match author_id {
-            Nullable::Present(author_id) => Some(author_id),
-            Nullable::Null => None,
-        });
         let images = images.unwrap_or_default();
 
         let mut stored_images = Vec::with_capacity(images.len());
@@ -346,38 +342,29 @@ impl PatchNotes<String> for Api {
             .unwrap_or(DEFAULT_PATCH_NOTES_LIMIT)
             .clamp(1, MAX_PATCH_NOTES_LIMIT) as usize;
 
-        let target =
-            match query_params.target.as_deref() {
-                Some(target) => match PatchNoteTarget::from_str(target) {
-                    Ok(target) => Some(target.to_string()),
-                    Err(_) => return Ok(
-                        ListPatchNotesResponse::Status400_TheRequestIsInvalid,
-                    ),
-                },
-                None => None,
-            };
+        let target = match query_params.target.as_deref() {
+            Some(target) => match PatchNoteTarget::from_str(target) {
+                Ok(target) => Some(target.to_string()),
+                Err(_) => return Ok(ListPatchNotesResponse::Status400_TheRequestIsInvalid),
+            },
+            None => None,
+        };
 
-        let category =
-            match query_params.category.as_deref() {
-                Some(category) => match PatchNoteCategory::from_str(category) {
-                    Ok(category) => Some(category.to_string()),
-                    Err(_) => return Ok(
-                        ListPatchNotesResponse::Status400_TheRequestIsInvalid,
-                    ),
-                },
-                None => None,
-            };
+        let category = match query_params.category.as_deref() {
+            Some(category) => match PatchNoteCategory::from_str(category) {
+                Ok(category) => Some(category.to_string()),
+                Err(_) => return Ok(ListPatchNotesResponse::Status400_TheRequestIsInvalid),
+            },
+            None => None,
+        };
 
-        let cursor =
-            match query_params.cursor.as_deref() {
-                Some(cursor) => match PatchNoteCursor::decode(cursor) {
-                    Ok(cursor) => Some(cursor),
-                    Err(_) => return Ok(
-                        ListPatchNotesResponse::Status400_TheRequestIsInvalid,
-                    ),
-                },
-                None => None,
-            };
+        let cursor = match query_params.cursor.as_deref() {
+            Some(cursor) => match PatchNoteCursor::decode(cursor) {
+                Ok(cursor) => Some(cursor),
+                Err(_) => return Ok(ListPatchNotesResponse::Status400_TheRequestIsInvalid),
+            },
+            None => None,
+        };
 
         let mut query = QueryBuilder::<MySql>::new(
             r#"
@@ -575,7 +562,6 @@ async fn parse_create_patch_note_multipart(
     let author_id = author_id
         .map(|author_id| {
             Uuid::parse_str(&author_id)
-                .map(Nullable::Present)
                 .map_err(|error| format!("invalid field `authorId`: {error}"))
         })
         .transpose()?;

@@ -215,9 +215,7 @@ impl Crawls<String> for Api {
             Some(cursor) => match CrawlCursor::decode(cursor) {
                 Ok(cursor) => Some(cursor),
                 Err(_) => {
-                    return Ok(
-                        ListCrawlsResponse::Status400_TheRequestIsInvalid,
-                    );
+                    return Ok(ListCrawlsResponse::Status400_TheRequestIsInvalid);
                 }
             },
             None => None,

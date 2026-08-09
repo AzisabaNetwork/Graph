@@ -269,9 +269,7 @@ impl ApiKeys<String> for Api {
             Some(cursor) => match ApiKeyCursor::decode(cursor) {
                 Ok(cursor) => Some(cursor),
                 Err(_) => {
-                    return Ok(
-                        ListApiKeysResponse::Status400_TheRequestIsInvalid,
-                    );
+                    return Ok(ListApiKeysResponse::Status400_TheRequestIsInvalid);
                 }
             },
             None => None,
