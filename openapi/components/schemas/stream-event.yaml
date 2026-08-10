@@ -1,5 +1,11 @@
 title: StreamEvent
 description: Represents a stream event.
+type: object
+required:
+  - type
+properties:
+  type:
+    type: string
 oneOf:
   - $ref: "../../openapi.yaml#/components/schemas/CrawlCreatedEvent"
   - $ref: "../../openapi.yaml#/components/schemas/CrawlDeletedEvent"

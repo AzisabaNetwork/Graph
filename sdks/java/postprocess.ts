@@ -1,4 +1,4 @@
-import { copyFile, rm } from "node:fs/promises";
+import { copyFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,7 +13,7 @@ await copyFile(
   resolve(sdkRoot, "overrides/docs/StreamApi.md"),
   resolve(generatedRoot, "docs/StreamApi.md"),
 );
-await rm(
+await copyFile(
+  resolve(sdkRoot, "overrides/src/test/java/net/azisaba/graph/api/StreamApiTest.java"),
   resolve(generatedRoot, "src/test/java/net/azisaba/graph/api/StreamApiTest.java"),
-  { force: true },
 );

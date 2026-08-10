@@ -45,6 +45,10 @@ export class StreamApi extends runtime.BaseAPI implements StreamApiInterface {
 
     async *streamEvents(initOverrides?: RequestInit | runtime.InitOverrideFunction): AsyncGenerator<StreamEvent, void, unknown> {
         const response = await this.streamEventsRaw(initOverrides);
+        const contentType = response.headers.get('Content-Type') ?? '';
+        if (!contentType.toLowerCase().startsWith('text/event-stream')) {
+            throw new Error(`Unexpected stream Content-Type: ${contentType}`);
+        }
         if (!response.body) {
             throw new Error('The response does not contain a readable event stream.');
         }

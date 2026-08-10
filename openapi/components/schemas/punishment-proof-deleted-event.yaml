@@ -4,11 +4,8 @@ description: >
   Represents an event indicating that a punishment proof was deleted.
   Requires the `stream:read` and `punishments:read` scopes to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: punishment-proof-deleted
   data:
     type: object
     title: PunishmentProofDeletedEventData

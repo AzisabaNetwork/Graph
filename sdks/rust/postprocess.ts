@@ -17,20 +17,25 @@ await copyFile(
 const cargoTomlPath = resolve(generatedRoot, "Cargo.toml");
 const cargoToml = await readFile(cargoTomlPath, "utf8");
 const dependencySection = "[dependencies]\n";
-const streamDependencies = [
-  'async-stream = "^0.3"',
-  'futures-core = "^0.3"',
-  'futures-util = "^0.3"',
-].join("\n");
+const streamDependencies = new Map([
+  ["async-stream", 'async-stream = "^0.3"'],
+  ["futures-core", 'futures-core = "^0.3"'],
+  ["futures-util", 'futures-util = "^0.3"'],
+]);
 
 if (!cargoToml.includes(dependencySection)) {
   throw new Error("Could not find the generated SDK dependency section.");
 }
 
-await writeFile(
-  cargoTomlPath,
-  cargoToml.replace(
-    dependencySection,
-    `${dependencySection}${streamDependencies}\n`,
-  ),
-);
+const missingDependencies = [...streamDependencies]
+  .filter(([name]) => !new RegExp(`^${name}\\s*=`, "m").test(cargoToml))
+  .map(([, declaration]) => declaration);
+
+const updatedCargoToml = missingDependencies.length === 0
+  ? cargoToml
+  : cargoToml.replace(
+      dependencySection,
+      `${dependencySection}${missingDependencies.join("\n")}\n`,
+    );
+
+await writeFile(cargoTomlPath, updatedCargoToml);

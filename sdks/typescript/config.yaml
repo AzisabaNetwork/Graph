@@ -11,4 +11,5 @@ additionalProperties:
   typescriptThreePlus: true
   withInterfaces: true
   useSingleRequestParameter: true
+  legacyDiscriminatorBehavior: false
   hideGenerationTimestamp: true

@@ -4,11 +4,8 @@ description: >
   Represents an event indicating that a patch note was deleted.
   Requires the `stream:read` and `patch-notes:read` scopes to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: patch-note-deleted
   data:
     type: object
     title: PatchNoteDeletedEventData

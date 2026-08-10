@@ -4,11 +4,8 @@ description: >
   Represents an event indicating that a crawl was created.
   Requires the `stream:read` and `crawls:read` scopes to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: crawl-created
   data:
     type: object
     title: CrawlCreatedEventData

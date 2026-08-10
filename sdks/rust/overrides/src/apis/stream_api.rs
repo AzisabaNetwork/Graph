@@ -11,8 +11,8 @@ use futures_util::StreamExt;
 use reqwest;
 use serde::{Deserialize, Serialize};
 
-use crate::{apis::ResponseContent, models};
 use super::{configuration, Error};
+use crate::{apis::ResponseContent, models};
 
 /// Typed errors returned while opening the event stream.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +29,10 @@ pub enum StreamEventsError {
 /// ends when the server disconnects and does not reconnect automatically.
 pub async fn stream_events(
     configuration: &configuration::Configuration,
-) -> Result<impl Stream<Item = Result<models::StreamEvent, Error<StreamEventsError>>>, Error<StreamEventsError>> {
+) -> Result<
+    impl Stream<Item = Result<models::StreamEvent, Error<StreamEventsError>>>,
+    Error<StreamEventsError>,
+> {
     let uri = format!("{}/stream", configuration.base_path);
     let mut request = configuration
         .client
@@ -49,7 +52,11 @@ pub async fn stream_events(
     if status.is_client_error() || status.is_server_error() {
         let content = response.text().await?;
         let entity = serde_json::from_str(&content).ok();
-        return Err(Error::ResponseError(ResponseContent { status, content, entity }));
+        return Err(Error::ResponseError(ResponseContent {
+            status,
+            content,
+            entity,
+        }));
     }
 
     let content_type = response
@@ -57,7 +64,10 @@ pub async fn stream_events(
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    if !content_type.to_ascii_lowercase().starts_with("text/event-stream") {
+    if !content_type
+        .to_ascii_lowercase()
+        .starts_with("text/event-stream")
+    {
         return Err(Error::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("unexpected stream Content-Type: {content_type}"),
@@ -91,9 +101,8 @@ impl EventStreamParser {
         let mut payloads = Vec::new();
 
         while let Some((line, consumed)) = next_line(&self.buffer, end_of_stream) {
-            let line = String::from_utf8(line.to_vec()).map_err(|error| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, error)
-            })?;
+            let line = String::from_utf8(line.to_vec())
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
             self.buffer.drain(..consumed);
             if let Some(payload) = self.consume_line(&line) {
                 payloads.push(payload);
@@ -163,13 +172,28 @@ fn next_line(buffer: &[u8], end_of_stream: bool) -> Option<(&[u8], usize)> {
 #[cfg(test)]
 mod tests {
     use super::EventStreamParser;
+    use crate::models::StreamEvent;
+
+    const PLAYER: &str = r#"{
+        "id":"00000000-0000-0000-0000-000000000001",
+        "discordId":null,
+        "username":"player",
+        "status":"offline",
+        "currentServer":null,
+        "bio":null
+    }"#;
 
     #[test]
     fn parses_chunked_multiline_events_and_ignores_comments() {
         let mut parser = EventStreamParser::default();
-        assert!(parser.push(b": keep-alive\r\nda", false).unwrap().is_empty());
+        assert!(parser
+            .push(b": keep-alive\r\nda", false)
+            .unwrap()
+            .is_empty());
         assert_eq!(
-            parser.push(b"ta: {\"type\":\r\ndata: \"friend-added\"}\r\n\r\n", false).unwrap(),
+            parser
+                .push(b"ta: {\"type\":\r\ndata: \"friend-added\"}\r\n\r\n", false)
+                .unwrap(),
             vec!["{\"type\":\n\"friend-added\"}"]
         );
     }
@@ -178,8 +202,29 @@ mod tests {
     fn dispatches_the_last_event_when_the_connection_closes() {
         let mut parser = EventStreamParser::default();
         assert_eq!(
-            parser.push(b"data: {\"type\":\"friend-added\"}", true).unwrap(),
+            parser
+                .push(b"data: {\"type\":\"friend-added\"}", true)
+                .unwrap(),
             vec!["{\"type\":\"friend-added\"}"]
         );
+    }
+
+    #[test]
+    fn dispatches_structurally_identical_events_by_type() {
+        let payload = format!(
+            r#"{{"type":"friend-removed","data":{{"player":{PLAYER},"friend":{PLAYER}}}}}"#
+        );
+
+        assert!(matches!(
+            serde_json::from_str::<StreamEvent>(&payload).unwrap(),
+            StreamEvent::FriendRemoved(_)
+        ));
+    }
+
+    #[test]
+    fn rejects_unknown_event_types() {
+        let error =
+            serde_json::from_str::<StreamEvent>(r#"{"type":"unknown","data":{}}"#).unwrap_err();
+        assert!(error.to_string().contains("unknown variant"));
     }
 }

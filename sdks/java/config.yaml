@@ -21,6 +21,8 @@ additionalProperties:
   scmUrl: "https://github.com/AzisabaNetwork/Graph"
   asyncNative: true
   supportUrlQuery: false
+  legacyDiscriminatorBehavior: false
+  useOneOfDiscriminatorLookup: true
   dateLibrary: "java8"
   useJakartaEe: false
   hideGenerationTimestamp: true

@@ -4,11 +4,8 @@ description: >
   Represents an event indicating that a friendship was added.
   Requires the `stream:read` scope and either the `players:read` or `players:read-details` scope to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: friend-added
   data:
     type: object
     title: FriendAddedEventData

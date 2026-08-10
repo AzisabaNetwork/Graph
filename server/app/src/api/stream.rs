@@ -5,172 +5,106 @@ use axum::response::sse::Event;
 use axum_extra::extract::CookieJar;
 use graph_api::apis::stream::{Stream, StreamEventsResponse};
 use graph_api::models::*;
-use graph_api::types::Object;
 use headers::Host;
 use http::Method;
 use redis::AsyncCommands;
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio_stream::StreamExt;
 use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
+use tokio_stream::StreamExt;
 
 const STREAM_EVENTS_CHANNEL: &str = "graph:stream-events";
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const REDIS_RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 pub(crate) fn crawl_created_event(crawl: Crawl) -> StreamEvent {
-    CrawlCreatedEvent::new(
-        event_type("crawl-created"),
-        CrawlCreatedEventData::new(crawl),
-    )
-    .into()
+    CrawlCreatedEvent::new(CrawlCreatedEventData::new(crawl)).into()
 }
 
 pub(crate) fn crawl_deleted_event(crawl: Crawl) -> StreamEvent {
-    CrawlDeletedEvent::new(
-        event_type("crawl-deleted"),
-        CrawlDeletedEventData::new(crawl),
-    )
-    .into()
+    CrawlDeletedEvent::new(CrawlDeletedEventData::new(crawl)).into()
 }
 
 pub(crate) fn friend_added_event(player: Player, friend: Player) -> StreamEvent {
-    FriendAddedEvent::new(
-        event_type("friend-added"),
-        FriendAddedEventData::new(player, friend),
-    )
-    .into()
+    FriendAddedEvent::new(FriendAddedEventData::new(player, friend)).into()
 }
 
 pub(crate) fn friend_removed_event(player: Player, friend: Player) -> StreamEvent {
-    FriendRemovedEvent::new(
-        event_type("friend-removed"),
-        FriendRemovedEventData::new(player, friend),
-    )
-    .into()
+    FriendRemovedEvent::new(FriendRemovedEventData::new(player, friend)).into()
 }
 
 pub(crate) fn friend_request_accepted_event(sender: Player, receiver: Player) -> StreamEvent {
-    FriendRequestAcceptedEvent::new(
-        event_type("friend-request-accepted"),
-        FriendRequestAcceptedEventData::new(sender, receiver),
-    )
-    .into()
+    FriendRequestAcceptedEvent::new(FriendRequestAcceptedEventData::new(sender, receiver)).into()
 }
 
 pub(crate) fn friend_request_added_event(sender: Player, receiver: Player) -> StreamEvent {
-    FriendRequestAddedEvent::new(
-        event_type("friend-request-added"),
-        FriendRequestAddedEventData::new(sender, receiver),
-    )
-    .into()
+    FriendRequestAddedEvent::new(FriendRequestAddedEventData::new(sender, receiver)).into()
 }
 
 pub(crate) fn friend_request_rejected_event(sender: Player, receiver: Player) -> StreamEvent {
-    FriendRequestRejectedEvent::new(
-        event_type("friend-request-rejected"),
-        FriendRequestRejectedEventData::new(sender, receiver),
-    )
-    .into()
+    FriendRequestRejectedEvent::new(FriendRequestRejectedEventData::new(sender, receiver)).into()
 }
 
 pub(crate) fn friend_request_removed_event(sender: Player, receiver: Player) -> StreamEvent {
-    FriendRequestRemovedEvent::new(
-        event_type("friend-request-removed"),
-        FriendRequestRemovedEventData::new(sender, receiver),
-    )
-    .into()
+    FriendRequestRemovedEvent::new(FriendRequestRemovedEventData::new(sender, receiver)).into()
 }
 
 pub(crate) fn patch_note_created_event(patch_note: PatchNote) -> StreamEvent {
-    PatchNoteCreatedEvent::new(
-        event_type("patch-note-created"),
-        PatchNoteCreatedEventData::new(patch_note),
-    )
-    .into()
+    PatchNoteCreatedEvent::new(PatchNoteCreatedEventData::new(patch_note)).into()
 }
 
 pub(crate) fn patch_note_deleted_event(patch_note: PatchNote) -> StreamEvent {
-    PatchNoteDeletedEvent::new(
-        event_type("patch-note-deleted"),
-        PatchNoteDeletedEventData::new(patch_note),
-    )
-    .into()
+    PatchNoteDeletedEvent::new(PatchNoteDeletedEventData::new(patch_note)).into()
 }
 
 pub(crate) fn punishment_created_event(punishment: Punishment) -> StreamEvent {
-    PunishmentCreatedEvent::new(
-        event_type("punishment-created"),
-        PunishmentCreatedEventData::new(punishment),
-    )
-    .into()
+    PunishmentCreatedEvent::new(PunishmentCreatedEventData::new(punishment)).into()
 }
 
 pub(crate) fn punishment_updated_event(punishment: Punishment) -> StreamEvent {
-    PunishmentUpdatedEvent::new(
-        event_type("punishment-updated"),
-        PunishmentUpdatedEventData::new(punishment),
-    )
-    .into()
+    PunishmentUpdatedEvent::new(PunishmentUpdatedEventData::new(punishment)).into()
 }
 
 pub(crate) fn punishment_revoked_event(punishment: Punishment) -> StreamEvent {
-    PunishmentRevokedEvent::new(
-        event_type("punishment-revoked"),
-        PunishmentRevokedEventData::new(punishment),
-    )
-    .into()
+    PunishmentRevokedEvent::new(PunishmentRevokedEventData::new(punishment)).into()
 }
 
 pub(crate) fn punishment_proof_created_event(punishment_id: u64, proof: Proof) -> StreamEvent {
-    PunishmentProofCreatedEvent::new(
-        event_type("punishment-proof-created"),
-        PunishmentProofCreatedEventData::new(punishment_id, proof),
-    )
-    .into()
+    PunishmentProofCreatedEvent::new(PunishmentProofCreatedEventData::new(punishment_id, proof))
+        .into()
 }
 
 pub(crate) fn punishment_proof_updated_event(punishment_id: u64, proof: Proof) -> StreamEvent {
-    PunishmentProofUpdatedEvent::new(
-        event_type("punishment-proof-updated"),
-        PunishmentProofUpdatedEventData::new(punishment_id, proof),
-    )
-    .into()
+    PunishmentProofUpdatedEvent::new(PunishmentProofUpdatedEventData::new(punishment_id, proof))
+        .into()
 }
 
 pub(crate) fn punishment_proof_deleted_event(punishment_id: u64, proof: Proof) -> StreamEvent {
-    PunishmentProofDeletedEvent::new(
-        event_type("punishment-proof-deleted"),
-        PunishmentProofDeletedEventData::new(punishment_id, proof),
-    )
-    .into()
+    PunishmentProofDeletedEvent::new(PunishmentProofDeletedEventData::new(punishment_id, proof))
+        .into()
 }
 
-fn event_type(value: &'static str) -> Object {
-    Object(serde_json::Value::String(value.to_string()))
-}
-
-fn stream_event_type(event: &StreamEvent) -> Option<&str> {
+fn stream_event_type(event: &StreamEvent) -> &str {
     let value = match event {
-        StreamEvent::CrawlCreatedEvent(event) => &event.r_type.0,
-        StreamEvent::CrawlDeletedEvent(event) => &event.r_type.0,
-        StreamEvent::FriendAddedEvent(event) => &event.r_type.0,
-        StreamEvent::FriendRemovedEvent(event) => &event.r_type.0,
-        StreamEvent::FriendRequestAcceptedEvent(event) => &event.r_type.0,
-        StreamEvent::FriendRequestAddedEvent(event) => &event.r_type.0,
-        StreamEvent::FriendRequestRejectedEvent(event) => &event.r_type.0,
-        StreamEvent::FriendRequestRemovedEvent(event) => &event.r_type.0,
-        StreamEvent::PatchNoteCreatedEvent(event) => &event.r_type.0,
-        StreamEvent::PatchNoteDeletedEvent(event) => &event.r_type.0,
-        StreamEvent::PunishmentCreatedEvent(event) => &event.r_type.0,
-        StreamEvent::PunishmentProofCreatedEvent(event) => &event.r_type.0,
-        StreamEvent::PunishmentProofDeletedEvent(event) => &event.r_type.0,
-        StreamEvent::PunishmentProofUpdatedEvent(event) => &event.r_type.0,
-        StreamEvent::PunishmentRevokedEvent(event) => &event.r_type.0,
-        StreamEvent::PunishmentUpdatedEvent(event) => &event.r_type.0,
+        StreamEvent::CrawlCreatedEvent(event) => &event.r_type,
+        StreamEvent::CrawlDeletedEvent(event) => &event.r_type,
+        StreamEvent::FriendAddedEvent(event) => &event.r_type,
+        StreamEvent::FriendRemovedEvent(event) => &event.r_type,
+        StreamEvent::FriendRequestAcceptedEvent(event) => &event.r_type,
+        StreamEvent::FriendRequestAddedEvent(event) => &event.r_type,
+        StreamEvent::FriendRequestRejectedEvent(event) => &event.r_type,
+        StreamEvent::FriendRequestRemovedEvent(event) => &event.r_type,
+        StreamEvent::PatchNoteCreatedEvent(event) => &event.r_type,
+        StreamEvent::PatchNoteDeletedEvent(event) => &event.r_type,
+        StreamEvent::PunishmentCreatedEvent(event) => &event.r_type,
+        StreamEvent::PunishmentProofCreatedEvent(event) => &event.r_type,
+        StreamEvent::PunishmentProofDeletedEvent(event) => &event.r_type,
+        StreamEvent::PunishmentProofUpdatedEvent(event) => &event.r_type,
+        StreamEvent::PunishmentRevokedEvent(event) => &event.r_type,
+        StreamEvent::PunishmentUpdatedEvent(event) => &event.r_type,
     };
-    value.as_str()
+    value
 }
 
 fn is_visible_to(event: &StreamEvent, api_key: &ApiKey) -> bool {
@@ -202,7 +136,7 @@ fn is_visible_to(event: &StreamEvent, api_key: &ApiKey) -> bool {
 }
 
 fn into_sse(event: StreamEvent) -> Result<Event, axum::Error> {
-    let event_type = stream_event_type(&event).unwrap_or("stream-event");
+    let event_type = stream_event_type(&event);
     Event::default().event(event_type).json_data(event)
 }
 
@@ -380,7 +314,7 @@ mod tests {
         assert_eq!(payload["type"], "friend-request-added");
         assert_eq!(payload["data"]["sender"]["username"], "Sender");
         assert_eq!(payload["data"]["receiver"]["username"], "Receiver");
-        assert_eq!(stream_event_type(&round_trip), Some("friend-request-added"));
+        assert_eq!(stream_event_type(&round_trip), "friend-request-added");
     }
 
     fn event() -> StreamEvent {

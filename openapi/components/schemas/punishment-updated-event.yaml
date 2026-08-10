@@ -4,11 +4,8 @@ description: >
   Represents an event indicating that a punishment was updated.
   Requires the `stream:read` and `punishments:read` scopes to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: punishment-updated
   data:
     type: object
     title: PunishmentUpdatedEventData

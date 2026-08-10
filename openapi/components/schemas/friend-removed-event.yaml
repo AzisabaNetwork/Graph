@@ -1,14 +1,11 @@
 type: object
 title: FriendRemovedEvent
-description: <
+description: >
   Represents an event indicating that a friendship was removed.
   Requires the `stream:read` scope and either the `players:read` or `players:read-details` scope to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: friend-removed
   data:
     type: object
     title: FriendRemovedEventData

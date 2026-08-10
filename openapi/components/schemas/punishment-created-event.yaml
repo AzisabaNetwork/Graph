@@ -4,11 +4,8 @@ description: >
   Represents an event indicating that a punishment was created.
   Requires the `stream:read` and `punishments:read` scopes to receive this event.
 required:
-  - type
   - data
 properties:
-  type:
-    const: punishment-created
   data:
     type: object
     title: PunishmentCreatedEventData

@@ -166,6 +166,25 @@ components:
       $ref: "./components/schemas/revocation.yaml"
     StreamEvent:
       $ref: "./components/schemas/stream-event.yaml"
+      discriminator:
+        propertyName: type
+        mapping:
+          crawl-created: "#/components/schemas/CrawlCreatedEvent"
+          crawl-deleted: "#/components/schemas/CrawlDeletedEvent"
+          friend-added: "#/components/schemas/FriendAddedEvent"
+          friend-removed: "#/components/schemas/FriendRemovedEvent"
+          friend-request-accepted: "#/components/schemas/FriendRequestAcceptedEvent"
+          friend-request-added: "#/components/schemas/FriendRequestAddedEvent"
+          friend-request-rejected: "#/components/schemas/FriendRequestRejectedEvent"
+          friend-request-removed: "#/components/schemas/FriendRequestRemovedEvent"
+          patch-note-created: "#/components/schemas/PatchNoteCreatedEvent"
+          patch-note-deleted: "#/components/schemas/PatchNoteDeletedEvent"
+          punishment-created: "#/components/schemas/PunishmentCreatedEvent"
+          punishment-proof-created: "#/components/schemas/PunishmentProofCreatedEvent"
+          punishment-proof-deleted: "#/components/schemas/PunishmentProofDeletedEvent"
+          punishment-proof-updated: "#/components/schemas/PunishmentProofUpdatedEvent"
+          punishment-revoked: "#/components/schemas/PunishmentRevokedEvent"
+          punishment-updated: "#/components/schemas/PunishmentUpdatedEvent"
 
   securitySchemes:
     apiKeyAuth:
