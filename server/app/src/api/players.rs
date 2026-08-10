@@ -476,6 +476,9 @@ impl Players<String> for Api {
         let mut query =
             QueryBuilder::<MySql>::new("SELECT sender_id FROM friend_requests WHERE player_id = ");
         query.push_bind(path_params.player_id);
+        if let Some(sender_id) = query_params.sender_id {
+            query.push(" AND sender_id = ").push_bind(sender_id);
+        }
         if let Some(cursor) = cursor {
             query.push(" AND sender_id > ").push_bind(cursor.value);
         }
