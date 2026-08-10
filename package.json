@@ -4,17 +4,15 @@
   "private": true,
   "packageManager": "pnpm@11.20.0",
   "scripts": {
-    "fern:check": "fern check",
     "openapi:lint": "redocly lint openapi/openapi.yaml",
     "generate:server": "rimraf server/generated && openapi-generator-cli generate -c server/generator-config.yaml",
-    "generate:typescript-sdk": "rimraf sdks/typescript && fern generate --group typescript --local",
-    "generate:java-sdk": "rimraf sdks/java && fern generate --group java --local",
-    "generate:rust-sdk": "rimraf sdks/rust && fern generate --group rust --local"
+    "generate:typescript-sdk": "rimraf sdks/typescript/generated && openapi-generator-cli generate -c sdks/typescript/config.yaml",
+    "generate:java-sdk": "rimraf sdks/java/generated && openapi-generator-cli generate -c sdks/java/config.yaml",
+    "generate:rust-sdk": "rimraf sdks/rust/generated && openapi-generator-cli generate -c sdks/rust/config.yaml"
   },
   "devDependencies": {
     "@openapitools/openapi-generator-cli": "^2.39.1",
     "@redocly/cli": "^2.38.0",
-    "fern-api": "^5.92.0",
     "rimraf": "^6.1.3"
   }
 }

@@ -1,0 +1,14 @@
+generatorName: typescript-fetch
+inputSpec: "openapi/openapi.yaml"
+outputDir: "sdks/typescript/generated"
+additionalProperties:
+  npmName: "@azisaba/graph"
+  npmVersion: "0.0.1"
+  gitHost: "github.com"
+  gitUserId: "AzisabaNetwork"
+  gitRepoId: "Graph"
+  supportsES6: true
+  typescriptThreePlus: true
+  withInterfaces: true
+  useSingleRequestParameter: true
+  hideGenerationTimestamp: true

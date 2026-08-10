@@ -1,0 +1,15 @@
+generatorName: rust
+inputSpec: "openapi/openapi.yaml"
+outputDir: "sdks/rust/generated"
+library: reqwest
+additionalProperties:
+  packageName: "azisaba-graph"
+  packageVersion: "0.0.1"
+  repositoryUrl: "https://github.com/AzisabaNetwork/Graph"
+  documentationUrl: "https://docs.rs/azisaba-graph"
+  homePageUrl: "https://graph.azisaba.net"
+  publishRustRegistry: "crates-io"
+  hideGenerationTimestamp: true
+  useSingleRequestParameter: true
+  preferUnsignedInt: true
+  bestFitInt: true

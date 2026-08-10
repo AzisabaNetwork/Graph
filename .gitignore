@@ -6,7 +6,8 @@
 .DS_Store
 
 node_modules/
+.pnpm-store/
 
-/sdks/
+/sdks/*/generated
 /server/generated
 /server/**/target

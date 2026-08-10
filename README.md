@@ -32,7 +32,7 @@ Open [http://localhost:8080](http://localhost:8080).
 
 ## SDKs
 
-Client SDKs are generated from the OpenAPI specification with [Fern](https://buildwithfern.com/). The configured publishing targets are:
+Client SDKs are generated from the OpenAPI specification with [OpenAPI Generator](https://openapi-generator.tech/). The configured publishing targets are:
 
 | Language | Package | Package repository and documentation |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ pnpm generate:java-sdk
 pnpm generate:rust-sdk
 ```
 
-Generated files are written to the ignored `sdks/` directory. Generator versions, package metadata, and publishing destinations are maintained in [`fern/generators.yml`](fern/generators.yml).
+Generated files are written to ignored `generated/` directories under `sdks/`. Package metadata and generator options are maintained in each language's `config.yaml` file.
 
 ## Development
 
@@ -57,7 +57,6 @@ Install the pinned pnpm dependencies, validate the API definition, and generate 
 ```bash
 pnpm install --frozen-lockfile
 pnpm openapi:lint
-pnpm fern:check
 pnpm generate:server
 ```
 

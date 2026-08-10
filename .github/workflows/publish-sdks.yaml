@@ -15,11 +15,6 @@ on:
         description: Rust SDK version to publish
         required: true
         type: string
-    secrets:
-      REPO_USERNAME:
-        required: true
-      REPO_PASSWORD:
-        required: true
 
   workflow_dispatch:
     inputs:
@@ -37,27 +32,65 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: read
-  id-token: write
 
 jobs:
-  publish-typescript:
-    name: Publish TypeScript SDK
-    uses: ./.github/workflows/publish-typescript-sdk.yaml
-    with:
-      version: ${{ inputs.typescript_version }}
-    secrets: inherit
+  publish:
+    name: Publish ${{ matrix.language }} SDK
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: TypeScript
+            workflow: publish-typescript-sdk.yaml
+            version: ${{ inputs.typescript_version }}
+          - language: Java
+            workflow: publish-java-sdk.yaml
+            version: ${{ inputs.java_version }}
+          - language: Rust
+            workflow: publish-rust-sdk.yaml
+            version: ${{ inputs.rust_version }}
 
-  publish-java:
-    name: Publish Java SDK
-    uses: ./.github/workflows/publish-java-sdk.yaml
-    with:
-      version: ${{ inputs.java_version }}
-    secrets: inherit
+    steps:
+      - name: Dispatch ${{ matrix.language }} publishing workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_VERSION: ${{ matrix.version }}
+          TARGET_WORKFLOW: ${{ matrix.workflow }}
+        run: |
+          gh workflow run "$TARGET_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            --field version="$PUBLISH_VERSION" \
+            --field caller_run_id="$GITHUB_RUN_ID"
 
-  publish-rust:
-    name: Publish Rust SDK
-    uses: ./.github/workflows/publish-rust-sdk.yaml
-    with:
-      version: ${{ inputs.rust_version }}
-    secrets: inherit
+      - name: Wait for ${{ matrix.language }} publishing workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_WORKFLOW: ${{ matrix.workflow }}
+          TARGET_RUN_NAME: Publish ${{ matrix.language }} SDK ${{ matrix.version }} (${{ github.run_id }})
+        run: |
+          run_id=""
+          for _ in {1..30}; do
+            run_id="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$TARGET_WORKFLOW" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,displayTitle \
+              --jq ".[] | select(.displayTitle == \"$TARGET_RUN_NAME\") | .databaseId" \
+              | head -n 1)"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ -z "$run_id" ]]; then
+            echo "Timed out waiting for $TARGET_WORKFLOW to start" >&2
+            exit 1
+          fi
+
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
