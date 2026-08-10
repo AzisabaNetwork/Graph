@@ -70,7 +70,27 @@ jobs:
       - name: Generate Java SDK
         env:
           VERSION: ${{ inputs.version }}
-        run: pnpm generate:java-sdk --additional-properties artifactVersion="$VERSION"
+        run: |
+          pnpm exec rimraf sdks/java/generated
+          pnpm exec openapi-generator-cli generate \
+            -c sdks/java/config.yaml \
+            --additional-properties artifactVersion="$VERSION"
+          node sdks/java/postprocess.ts
+
+      - name: Validate package metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        working-directory: sdks/java/generated
+        run: |
+          actual_version="$(node -e '
+            const { readFileSync } = require("node:fs");
+            const match = readFileSync("pom.xml", "utf8").match(/<project[\s\S]*?<version>([^<]+)<\/version>/);
+            if (!match) process.exit(1);
+            process.stdout.write(match[1]);
+          ')"
+          echo "Expected version: $VERSION"
+          echo "Generated version: $actual_version"
+          test "$actual_version" = "$VERSION"
 
       - name: Build Java SDK
         working-directory: sdks/java/generated

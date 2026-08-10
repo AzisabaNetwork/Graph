@@ -57,20 +57,37 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Check package version availability
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if npm view "@azisaba/graph@$VERSION" version >/dev/null 2>&1; then
+            echo "::error title=Version already published::@azisaba/graph@$VERSION already exists on npm. Choose a new version."
+            exit 1
+          fi
+
       - name: Install generator dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Generate TypeScript SDK
         env:
           VERSION: ${{ inputs.version }}
-        run: pnpm generate:typescript-sdk --additional-properties npmVersion="$VERSION"
+        run: |
+          pnpm exec rimraf sdks/typescript/generated
+          pnpm exec openapi-generator-cli generate \
+            -c sdks/typescript/config.yaml \
+            --additional-properties npmVersion="$VERSION"
+          node sdks/typescript/postprocess.ts
 
       - name: Validate package metadata
         env:
           VERSION: ${{ inputs.version }}
         working-directory: sdks/typescript/generated
         run: |
-          npm version "$VERSION" --allow-same-version --no-git-tag-version
+          actual_version="$(node -p 'require("./package.json").version')"
+          echo "Expected version: $VERSION"
+          echo "Generated version: $actual_version"
+          test "$actual_version" = "$VERSION"
           npm pkg set \
             repository.type=git \
             repository.url=https://github.com/AzisabaNetwork/Graph.git

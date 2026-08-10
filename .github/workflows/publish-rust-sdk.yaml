@@ -66,13 +66,27 @@ jobs:
       - name: Generate Rust SDK
         env:
           VERSION: ${{ inputs.version }}
-        run: pnpm generate:rust-sdk --additional-properties packageVersion="$VERSION"
+        run: |
+          pnpm exec rimraf sdks/rust/generated
+          pnpm exec openapi-generator-cli generate \
+            -c sdks/rust/config.yaml \
+            --additional-properties packageVersion="$VERSION"
+          node sdks/rust/postprocess.ts
 
       - name: Validate package metadata
+        env:
+          VERSION: ${{ inputs.version }}
         working-directory: sdks/rust/generated
         run: |
-          test "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].license')" = "MIT"
-          test "$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" = "${{ inputs.version }}"
+          metadata="$(cargo metadata --no-deps --format-version 1)"
+          actual_license="$(jq -r '.packages[0].license' <<<"$metadata")"
+          actual_version="$(jq -r '.packages[0].version' <<<"$metadata")"
+          echo "Expected license: MIT"
+          echo "Generated license: $actual_license"
+          echo "Expected version: $VERSION"
+          echo "Generated version: $actual_version"
+          test "$actual_license" = "MIT"
+          test "$actual_version" = "$VERSION"
 
       - name: Build and test Rust SDK
         working-directory: sdks/rust/generated
