@@ -48,7 +48,9 @@ pnpm generate:java-sdk
 pnpm generate:rust-sdk
 ```
 
-Generated files are written to ignored `generated/` directories under `sdks/`. Package metadata and generator options are maintained in each language's `config.yaml` file.
+Generated files are written to ignored `generated/` directories under [`sdks/`](sdks/README.md). Each language keeps its generator configuration, post-processing script, and overrides together in its SDK directory.
+
+The generated `StreamApi` is replaced during generation with the SSE adapters under `overrides/`. The override paths mirror the generated package layout and reuse the generated configuration, authentication, and `StreamEvent` models.
 
 ## Development
 

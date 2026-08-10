@@ -1,4 +1,4 @@
-name: OpenAPI Lint
+name: Validate OpenAPI and SDK Tools
 
 on:
   push:
@@ -7,6 +7,8 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "redocly.yaml"
+      - "sdks/*/postprocess.ts"
+      - "tsconfig.json"
       - ".github/workflows/openapi-lint.yaml"
 
   pull_request:
@@ -15,6 +17,8 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "redocly.yaml"
+      - "sdks/*/postprocess.ts"
+      - "tsconfig.json"
       - ".github/workflows/openapi-lint.yaml"
 
 permissions:
@@ -43,3 +47,6 @@ jobs:
 
       - name: Lint OpenAPI specification
         run: pnpm openapi:lint
+
+      - name: Type-check SDK generation tools
+        run: pnpm typecheck:sdk-tools
