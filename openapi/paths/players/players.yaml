@@ -25,6 +25,11 @@ get:
       description: The cursor returned by the previous request.
       schema:
         type: string
+    - name: username
+      in: query
+      description: The username used to filter players.
+      schema:
+        $ref: "../../openapi.yaml#/components/schemas/PlayerUsername"
     - name: discordId
       in: query
       description: The Discord user ID used to filter players. Requires the `players:read-details` scope.

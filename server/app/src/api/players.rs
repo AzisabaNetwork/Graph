@@ -73,6 +73,17 @@ impl PlayerRecord {
             into_nullable(bio),
         )
     }
+
+    fn matches_filters(
+        &self,
+        discord_id: Option<&str>,
+        status: Option<&str>,
+        cursor: Option<&PlayerCursor>,
+    ) -> bool {
+        discord_id.is_none_or(|discord_id| self.discord_id.as_deref() == Some(discord_id))
+            && status.is_none_or(|status| self.status == status)
+            && cursor.is_none_or(|cursor| self.id > cursor.value)
+    }
 }
 
 impl Api {
@@ -92,11 +103,13 @@ impl Api {
     }
 
     async fn load_player(&self, id: Uuid, include_details: bool) -> Result<Option<Player>, String> {
-        let Some(username) = self.player_db.get_username_by_uuid(id).await? else {
+        let Some(profile) = self.player_db.find_by_uuid(id).await? else {
             return Ok(None);
         };
         let record = self.load_player_record(id).await?;
-        Ok(Some(record.into_list_item(username, include_details)))
+        Ok(Some(
+            record.into_list_item(profile.username, include_details),
+        ))
     }
 
     async fn load_players(
@@ -134,8 +147,8 @@ impl Api {
                 .remove(&id)
                 .unwrap_or_else(|| PlayerRecord::empty(id));
             tasks.spawn(async move {
-                let username = player_db.get_username_by_uuid(id).await?;
-                Ok::<_, PlayerDbError>((index, record, username))
+                let profile = player_db.find_by_uuid(id).await?;
+                Ok::<_, PlayerDbError>((index, record, profile))
             });
         }
 
@@ -143,14 +156,14 @@ impl Api {
             .take(ids.len())
             .collect::<Vec<_>>();
         while let Some(result) = tasks.join_next().await {
-            let (index, record, username) = result
+            let (index, record, profile) = result
                 .map_err(|error| format!("PlayerDB lookup task failed: {error}"))?
                 .map_err(|error| {
                     tracing::error!(%error, "PlayerDB profile lookup failed");
                     error.to_string()
                 })?;
-            if let Some(username) = username {
-                items[index] = Some(record.into_list_item(username, include_details));
+            if let Some(profile) = profile {
+                items[index] = Some(record.into_list_item(profile.username, include_details));
             }
         }
 
@@ -159,8 +172,8 @@ impl Api {
 
     async fn players_exist(&self, first: Uuid, second: Uuid) -> Result<bool, String> {
         let (first, second) = tokio::try_join!(
-            self.player_db.get_username_by_uuid(first),
-            self.player_db.get_username_by_uuid(second),
+            self.player_db.find_by_uuid(first),
+            self.player_db.find_by_uuid(second),
         )?;
         Ok(first.is_some() && second.is_some())
     }
@@ -441,7 +454,7 @@ impl Players<String> for Api {
         }
         if self
             .player_db
-            .get_username_by_uuid(path_params.player_id)
+            .find_by_uuid(path_params.player_id)
             .await?
             .is_none()
         {
@@ -501,7 +514,7 @@ impl Players<String> for Api {
         }
         if self
             .player_db
-            .get_username_by_uuid(path_params.player_id)
+            .find_by_uuid(path_params.player_id)
             .await?
             .is_none()
         {
@@ -598,6 +611,33 @@ impl Players<String> for Api {
             },
             None => None,
         };
+        if let Some(username) = query_params.username.as_deref() {
+            let profile = match self.player_db.find_by_username(username).await? {
+                Some(profile) => profile,
+                None => {
+                    return Ok(
+                        ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
+                            ListPlayers200Response::new(Vec::new(), into_nullable(None)),
+                        ),
+                    );
+                }
+            };
+            let record = self.load_player_record(profile.id).await?;
+            let items = if !record.matches_filters(
+                query_params.discord_id.as_deref(),
+                status.as_deref(),
+                cursor.as_ref(),
+            ) {
+                Vec::new()
+            } else {
+                vec![record.into_list_item(profile.username, can_read_discord_id)]
+            };
+            return Ok(
+                ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
+                    ListPlayers200Response::new(items, into_nullable(None)),
+                ),
+            );
+        }
 
         let mut query = QueryBuilder::<MySql>::new(
             "SELECT id, discord_id, status, current_server, bio \
@@ -809,11 +849,7 @@ impl Players<String> for Api {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestIsInvalid);
         }
 
-        let Some(username) = self
-            .player_db
-            .get_username_by_uuid(path_params.player_id)
-            .await?
-        else {
+        let Some(profile) = self.player_db.find_by_uuid(path_params.player_id).await? else {
             return Ok(UpdatePlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
@@ -867,7 +903,7 @@ impl Players<String> for Api {
 
         Ok(
             UpdatePlayerByIdResponse::Status200_ThePlayerWasUpdatedSuccessfully(
-                record.into_list_item(username, can_read_discord_id(api_key)),
+                record.into_list_item(profile.username, can_read_discord_id(api_key)),
             ),
         )
     }
@@ -956,6 +992,25 @@ mod tests {
         assert_eq!(player.discord_id, Nullable::Null);
         assert_eq!(player.current_server, Nullable::Null);
         assert_eq!(player.bio, Nullable::Null);
+    }
+
+    #[test]
+    fn empty_player_record_matches_only_its_default_filters() {
+        let id = Uuid::from_u128(2);
+        let record = PlayerRecord::empty(id);
+        let discord_id = Some("123456789012345678");
+
+        assert!(record.matches_filters(None, Some("offline"), None));
+        assert!(!record.matches_filters(discord_id, None, None));
+        assert!(!record.matches_filters(None, Some("online"), None));
+        assert!(!record.matches_filters(
+            None,
+            None,
+            Some(&PlayerCursor {
+                value: id,
+                tie_breaker: id,
+            }),
+        ));
     }
 
     #[test]

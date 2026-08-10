@@ -13,6 +13,12 @@ pub(crate) struct PlayerDbClient {
     client: Client,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct PlayerDbProfile {
+    pub id: Uuid,
+    pub username: String,
+}
+
 impl PlayerDbClient {
     pub fn new() -> Result<Self, PlayerDbError> {
         let client = Client::builder()
@@ -23,10 +29,33 @@ impl PlayerDbClient {
         Ok(Self { client })
     }
 
-    async fn find_player(
+    pub async fn find_by_uuid(&self, id: Uuid) -> Result<Option<PlayerDbProfile>, PlayerDbError> {
+        let Some(profile) = self.request_profile(id).await? else {
+            return Ok(None);
+        };
+        if profile.id != id {
+            return Err(PlayerDbError::UnexpectedResponse);
+        }
+        Ok(Some(profile))
+    }
+
+    pub async fn find_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<PlayerDbProfile>, PlayerDbError> {
+        let Some(profile) = self.request_profile(username).await? else {
+            return Ok(None);
+        };
+        if !profile.username.eq_ignore_ascii_case(username) {
+            return Err(PlayerDbError::UnexpectedResponse);
+        }
+        Ok(Some(profile))
+    }
+
+    async fn request_profile(
         &self,
         identifier: impl Display,
-    ) -> Result<Option<PlayerDbPlayer>, PlayerDbError> {
+    ) -> Result<Option<PlayerDbProfile>, PlayerDbError> {
         let response = self
             .client
             .get(format!("{API_BASE_URL}/{identifier}"))
@@ -40,16 +69,6 @@ impl PlayerDbClient {
             PlayerDbResponse::NotFound => Ok(None),
             PlayerDbResponse::Unknown => Err(PlayerDbError::UnexpectedResponse),
         }
-    }
-
-    pub async fn get_username_by_uuid(&self, id: Uuid) -> Result<Option<String>, PlayerDbError> {
-        let Some(player) = self.find_player(id).await? else {
-            return Ok(None);
-        };
-        if player.id != id {
-            return Err(PlayerDbError::UnexpectedResponse);
-        }
-        Ok(Some(player.username))
     }
 }
 
@@ -92,12 +111,6 @@ impl From<PlayerDbError> for String {
 }
 
 #[derive(Debug, Deserialize)]
-struct PlayerDbPlayer {
-    id: Uuid,
-    username: String,
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(tag = "code")]
 enum PlayerDbResponse {
     #[serde(rename = "player.found")]
@@ -112,5 +125,5 @@ enum PlayerDbResponse {
 
 #[derive(Debug, Deserialize)]
 struct PlayerDbFoundData {
-    player: PlayerDbPlayer,
+    player: PlayerDbProfile,
 }

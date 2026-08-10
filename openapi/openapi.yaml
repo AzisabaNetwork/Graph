@@ -140,6 +140,8 @@ components:
       $ref: "./components/schemas/player-id.yaml"
     PlayerStatus:
       $ref: "./components/schemas/player-status.yaml"
+    PlayerUsername:
+      $ref: "./components/schemas/player-username.yaml"
     Proof:
       $ref: "./components/schemas/proof.yaml"
     ProofId:
