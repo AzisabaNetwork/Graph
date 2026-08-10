@@ -543,13 +543,25 @@ impl Players<String> for Api {
             .push_bind(path_params.player_id)
             .push(
                 " THEN player2_id ELSE player1_id END AS friend_id \
-                   FROM friendships WHERE player1_id = ",
+                   FROM friendships WHERE (player1_id = ",
             )
             .push_bind(path_params.player_id)
             .push(" OR player2_id = ")
-            .push_bind(path_params.player_id);
-        if let Some(cursor) = cursor {
-            query.push(" HAVING friend_id > ").push_bind(cursor.value);
+            .push_bind(path_params.player_id)
+            .push(")");
+        if query_params.friend_id.is_some() || cursor.is_some() {
+            query.push(" HAVING ");
+            let mut filters = query.separated(" AND ");
+            if let Some(friend_id) = query_params.friend_id {
+                filters
+                    .push("friend_id = ")
+                    .push_bind_unseparated(friend_id);
+            }
+            if let Some(cursor) = cursor {
+                filters
+                    .push("friend_id > ")
+                    .push_bind_unseparated(cursor.value);
+            }
         }
         query
             .push(" ORDER BY friend_id ASC LIMIT ")

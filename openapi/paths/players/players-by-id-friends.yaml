@@ -24,6 +24,11 @@ get:
       description: The cursor returned by the previous request.
       schema:
         type: string
+    - name: friendId
+      in: query
+      description: The unique identifier of the friend used to filter friendships.
+      schema:
+        $ref: "../../openapi.yaml#/components/schemas/PlayerId"
   responses:
     "200":
       description: The player's friends were retrieved successfully.
