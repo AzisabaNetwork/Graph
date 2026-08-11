@@ -22,7 +22,7 @@ pub(crate) struct Api {
     punishments_pool: MySqlPool,
     object_storage: Option<ObjectStorage>,
     player_db: PlayerDbClient,
-    redis: Option<ConnectionManager>,
+    redis_publisher: Option<ConnectionManager>,
     stream_events: broadcast::Sender<graph_api::models::StreamEvent>,
 }
 
@@ -39,23 +39,23 @@ impl Api {
             punishments_pool,
             object_storage,
             player_db,
-            redis: None,
+            redis_publisher: None,
             stream_events,
         }
     }
 
-    pub(crate) async fn new_with_redis(
+    pub(crate) fn new_with_redis(
         pool: MySqlPool,
         punishments_pool: MySqlPool,
         object_storage: Option<ObjectStorage>,
         player_db: PlayerDbClient,
         redis_client: redis::Client,
         redis: ConnectionManager,
-    ) -> redis::RedisResult<Self> {
+    ) -> Self {
         let mut api = Self::new(pool, punishments_pool, object_storage, player_db);
-        api.redis = Some(redis);
-        api.start_stream_event_listener(redis_client).await?;
-        Ok(api)
+        api.redis_publisher = Some(redis);
+        api.start_stream_event_listener(redis_client);
+        api
     }
 
     pub(crate) fn pool(&self) -> &MySqlPool {

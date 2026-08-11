@@ -11,12 +11,14 @@ use redis::AsyncCommands;
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::{BroadcastStream, IntervalStream};
 
 const STREAM_EVENTS_CHANNEL: &str = "graph:stream-events";
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
-const REDIS_RECONNECT_DELAY: Duration = Duration::from_secs(1);
+const REDIS_RECONNECT_MIN_DELAY: Duration = Duration::from_secs(1);
+const REDIS_RECONNECT_MAX_DELAY: Duration = Duration::from_secs(30);
+const REDIS_PUBLISH_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 pub(crate) fn crawl_created_event(crawl: Crawl) -> StreamEvent {
     CrawlCreatedEvent::new(CrawlCreatedEventData::new(crawl)).into()
@@ -142,7 +144,7 @@ fn into_sse(event: StreamEvent) -> Result<Event, axum::Error> {
 
 impl Api {
     pub(crate) async fn publish_stream_event(&self, event: StreamEvent) {
-        let Some(redis) = &self.redis else {
+        let Some(redis) = &self.redis_publisher else {
             let _ = self.stream_events.send(event);
             return;
         };
@@ -154,49 +156,96 @@ impl Api {
             }
         };
         let mut redis = redis.clone();
-        match redis
-            .publish::<_, _, usize>(STREAM_EVENTS_CHANNEL, payload)
-            .await
-        {
-            Ok(0) => tracing::warn!(
-                channel = STREAM_EVENTS_CHANNEL,
-                "stream event had no Redis subscribers"
-            ),
+        let result = publish_to_redis(&mut redis, &payload).await;
+        match result {
+            Ok(0) => {
+                tracing::warn!(
+                    channel = STREAM_EVENTS_CHANNEL,
+                    "stream event had no Redis subscribers; delivering locally"
+                );
+                let _ = self.stream_events.send(event);
+            }
             Ok(_) => {}
             Err(error) => {
-                tracing::error!(%error, "failed to publish stream event to Redis");
+                tracing::error!(
+                    %error,
+                    channel = STREAM_EVENTS_CHANNEL,
+                    "failed to publish stream event to Redis; delivering locally"
+                );
+                let _ = self.stream_events.send(event);
             }
         }
     }
 
-    pub(crate) async fn start_stream_event_listener(
-        &self,
-        redis_client: redis::Client,
-    ) -> redis::RedisResult<()> {
-        let initial_subscription = subscribe_to_stream_events(&redis_client).await?;
+    pub(crate) fn start_stream_event_listener(&self, redis_client: redis::Client) {
         let stream_events = self.stream_events.clone();
-        tokio::spawn(async move {
-            let mut subscription = Some(initial_subscription);
-            loop {
-                let pubsub = match subscription.take() {
-                    Some(pubsub) => pubsub,
-                    None => match subscribe_to_stream_events(&redis_client).await {
-                        Ok(pubsub) => pubsub,
-                        Err(error) => {
-                            tracing::error!(%error, "failed to resubscribe to Redis stream events");
-                            tokio::time::sleep(REDIS_RECONNECT_DELAY).await;
-                            continue;
-                        }
-                    },
-                };
-                if let Err(error) = receive_stream_events(pubsub, &stream_events).await {
-                    tracing::error!(%error, "Redis stream event listener disconnected");
-                }
-                tokio::time::sleep(REDIS_RECONNECT_DELAY).await;
-            }
-        });
-        Ok(())
+        tokio::spawn(listen_to_stream_events(redis_client, stream_events));
     }
+}
+
+async fn publish_to_redis(
+    redis: &mut redis::aio::ConnectionManager,
+    payload: &str,
+) -> redis::RedisResult<usize> {
+    match redis
+        .publish::<_, _, usize>(STREAM_EVENTS_CHANNEL, payload)
+        .await
+    {
+        Err(error) if error.is_connection_dropped() => {
+            tracing::warn!(
+                %error,
+                channel = STREAM_EVENTS_CHANNEL,
+                "failed to publish stream event to Redis; retrying after reconnect"
+            );
+            tokio::time::sleep(REDIS_PUBLISH_RETRY_DELAY).await;
+            redis
+                .publish::<_, _, usize>(STREAM_EVENTS_CHANNEL, payload)
+                .await
+        }
+        result => result,
+    }
+}
+
+async fn listen_to_stream_events(
+    redis_client: redis::Client,
+    stream_events: broadcast::Sender<StreamEvent>,
+) {
+    let mut reconnect_delay = REDIS_RECONNECT_MIN_DELAY;
+    loop {
+        let pubsub = match subscribe_to_stream_events(&redis_client).await {
+            Ok(pubsub) => {
+                reconnect_delay = REDIS_RECONNECT_MIN_DELAY;
+                pubsub
+            }
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    retry_after_seconds = reconnect_delay.as_secs(),
+                    "failed to subscribe to Redis stream events"
+                );
+                tokio::time::sleep(reconnect_delay).await;
+                reconnect_delay = next_reconnect_delay(reconnect_delay);
+                continue;
+            }
+        };
+        match receive_stream_events(pubsub, &stream_events).await {
+            Ok(()) => tracing::warn!(
+                retry_after_seconds = reconnect_delay.as_secs(),
+                "Redis stream event listener disconnected"
+            ),
+            Err(error) => tracing::error!(
+                %error,
+                retry_after_seconds = reconnect_delay.as_secs(),
+                "Redis stream event listener disconnected"
+            ),
+        }
+        tokio::time::sleep(reconnect_delay).await;
+        reconnect_delay = next_reconnect_delay(reconnect_delay);
+    }
+}
+
+fn next_reconnect_delay(current: Duration) -> Duration {
+    current.saturating_mul(2).min(REDIS_RECONNECT_MAX_DELAY)
 }
 
 async fn subscribe_to_stream_events(
@@ -300,6 +349,119 @@ mod tests {
             ])
         ));
         assert!(is_visible_to(&event, &api_key(&[ApiKeyScope::Star])));
+    }
+
+    #[test]
+    fn redis_reconnect_delay_is_exponential_and_capped() {
+        assert_eq!(
+            next_reconnect_delay(REDIS_RECONNECT_MIN_DELAY),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            next_reconnect_delay(Duration::from_secs(16)),
+            REDIS_RECONNECT_MAX_DELAY
+        );
+        assert_eq!(
+            next_reconnect_delay(REDIS_RECONNECT_MAX_DELAY),
+            REDIS_RECONNECT_MAX_DELAY
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a dedicated TEST_REDIS_URL because it kills Redis client connections"]
+    async fn redis_connections_recover_after_being_killed() {
+        let redis_url = std::env::var("TEST_REDIS_URL").expect("TEST_REDIS_URL must be set");
+        let redis_client = redis::Client::open(redis_url).expect("test Redis URL must be valid");
+        let publisher_config = redis::aio::ConnectionManagerConfig::new()
+            .set_min_delay(Duration::from_millis(10))
+            .set_max_delay(Duration::from_millis(50))
+            .set_number_of_retries(5);
+        let mut publisher =
+            redis::aio::ConnectionManager::new_with_config(redis_client.clone(), publisher_config)
+                .await
+                .expect("publisher must connect");
+        let mut admin = redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("admin connection must connect");
+        let (stream_events, mut received_events) = broadcast::channel(4);
+        let listener = tokio::spawn(listen_to_stream_events(redis_client, stream_events));
+
+        wait_for_redis_subscribers(&mut admin, 1).await;
+        let payload = serde_json::to_string(&event()).expect("event must serialize");
+        assert_eq!(
+            publish_to_redis(&mut publisher, &payload)
+                .await
+                .expect("initial publish must succeed"),
+            1
+        );
+        received_events
+            .recv()
+            .await
+            .expect("initial event must be received");
+
+        let killed_publishers: usize = redis::cmd("CLIENT")
+            .arg("KILL")
+            .arg("TYPE")
+            .arg("normal")
+            .arg("SKIPME")
+            .arg("yes")
+            .query_async(&mut admin)
+            .await
+            .expect("publisher connection must be killed");
+        assert!(killed_publishers >= 1);
+        assert_eq!(
+            publish_to_redis(&mut publisher, &payload)
+                .await
+                .expect("publisher must reconnect"),
+            1
+        );
+        received_events
+            .recv()
+            .await
+            .expect("event after publisher reconnect must be received");
+
+        let killed_subscribers: usize = redis::cmd("CLIENT")
+            .arg("KILL")
+            .arg("TYPE")
+            .arg("pubsub")
+            .query_async(&mut admin)
+            .await
+            .expect("subscriber connection must be killed");
+        assert_eq!(killed_subscribers, 1);
+        wait_for_redis_subscribers(&mut admin, 0).await;
+        wait_for_redis_subscribers(&mut admin, 1).await;
+        publish_to_redis(&mut publisher, &payload)
+            .await
+            .expect("publish after subscriber reconnect must succeed");
+        received_events
+            .recv()
+            .await
+            .expect("event after subscriber reconnect must be received");
+
+        listener.abort();
+    }
+
+    async fn wait_for_redis_subscribers(
+        redis: &mut redis::aio::MultiplexedConnection,
+        expected: usize,
+    ) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (_, subscribers): (String, usize) = redis::cmd("PUBSUB")
+                    .arg("NUMSUB")
+                    .arg(STREAM_EVENTS_CHANNEL)
+                    .query_async(redis)
+                    .await
+                    .expect("subscriber count must be available");
+                if subscribers == expected {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("subscriber count must reach the expected value");
     }
 
     #[test]

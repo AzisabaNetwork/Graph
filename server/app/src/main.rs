@@ -6,7 +6,7 @@ mod pagination;
 use crate::api::non_empty_env;
 use api::{Api, ObjectStorage};
 use mojang::PlayerDbClient;
-use redis::aio::ConnectionManager;
+use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
@@ -41,9 +41,14 @@ async fn main() {
 
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
     let redis_client = redis::Client::open(redis_url).expect("REDIS_URL must be valid");
-    let redis = ConnectionManager::new(redis_client.clone())
-        .await
-        .expect("failed to connect Redis");
+    let redis_config = ConnectionManagerConfig::new()
+        .set_min_delay(std::time::Duration::from_millis(250))
+        .set_max_delay(std::time::Duration::from_secs(5))
+        .set_number_of_retries(5)
+        .set_connection_timeout(Some(std::time::Duration::from_secs(5)))
+        .set_response_timeout(Some(std::time::Duration::from_secs(5)));
+    let redis = ConnectionManager::new_lazy_with_config(redis_client.clone(), redis_config)
+        .expect("failed to configure Redis connection manager");
 
     let api = Api::new_with_redis(
         pool,
@@ -52,9 +57,7 @@ async fn main() {
         PlayerDbClient::new().expect("failed to create PlayerDB client"),
         redis_client,
         redis,
-    )
-    .await
-    .expect("failed to subscribe to Redis stream events");
+    );
 
     if let Some(bootstrap_api_key) = non_empty_env("GRAPH_BOOTSTRAP_API_KEY") {
         api.provision_bootstrap_api_key(&bootstrap_api_key)
