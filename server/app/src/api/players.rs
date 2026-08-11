@@ -35,6 +35,11 @@ const MAX_PLAYERS_LIMIT: u8 = 100;
 
 type PlayerCursor = Cursor<Uuid, Uuid>;
 
+struct FriendRequestPlayers {
+    receiver: Player,
+    sender: Player,
+}
+
 #[derive(Debug, FromRow)]
 struct PlayerRecord {
     id: Uuid,
@@ -182,15 +187,24 @@ impl Api {
         &self,
         receiver_id: Uuid,
         sender_id: Uuid,
-    ) -> Result<Option<(Player, Player)>, String> {
+    ) -> Result<Option<FriendRequestPlayers>, String> {
         let (receiver, sender) = tokio::try_join!(
             self.load_player(receiver_id, false),
             self.load_player(sender_id, false),
         )?;
-        Ok(match (sender, receiver) {
-            (Some(sender), Some(receiver)) => Some((sender, receiver)),
-            _ => None,
-        })
+        match (receiver, sender) {
+            (Some(receiver), Some(sender)) => Ok(Some(FriendRequestPlayers { receiver, sender })),
+            (receiver, sender) => {
+                tracing::warn!(
+                    %receiver_id,
+                    %sender_id,
+                    receiver_found = receiver.is_some(),
+                    sender_found = sender.is_some(),
+                    "friend request participant was not found in PlayerDB"
+                );
+                Ok(None)
+            }
+        }
     }
 }
 
@@ -211,7 +225,7 @@ impl Players<String> for Api {
                 AcceptPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-        let Some((sender, receiver)) = self
+        let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
         else {
@@ -256,11 +270,11 @@ impl Players<String> for Api {
 
         transaction.commit().await.map_err(log_database_error)?;
         self.publish_stream_event(friend_request_accepted_event(
-            sender.clone(),
-            receiver.clone(),
+            players.sender.clone(),
+            players.receiver.clone(),
         ))
         .await;
-        self.publish_stream_event(friend_added_event(receiver, sender))
+        self.publish_stream_event(friend_added_event(players.receiver, players.sender))
             .await;
         Ok(AcceptPlayerFriendRequestResponse::Status204_TheFriendRequestWasAcceptedSuccessfully)
     }
@@ -328,13 +342,13 @@ impl Players<String> for Api {
         .map_err(log_database_error)?;
         transaction.commit().await.map_err(log_database_error)?;
 
-        let Some((event_friend, event_player)) = self
+        let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.friend_id)
             .await?
         else {
             return Err("PlayerDB profile disappeared after friendship creation".to_string());
         };
-        self.publish_stream_event(friend_added_event(event_player, event_friend))
+        self.publish_stream_event(friend_added_event(players.receiver, players.sender))
             .await;
 
         let friend = self
@@ -364,7 +378,7 @@ impl Players<String> for Api {
                 AddPlayerFriendRequestResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSender,
             );
         }
-        let Some((sender, receiver)) = self
+        let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
         else {
@@ -407,7 +421,7 @@ impl Players<String> for Api {
         .map_err(log_database_error)?;
 
         if request.rows_affected() > 0 {
-            self.publish_stream_event(friend_request_added_event(sender, receiver))
+            self.publish_stream_event(friend_request_added_event(players.sender, players.receiver))
                 .await;
         }
 
@@ -718,7 +732,7 @@ impl Players<String> for Api {
                 RejectPlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-        let Some((sender, receiver)) = self
+        let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
         else {
@@ -736,8 +750,11 @@ impl Players<String> for Api {
             return Ok(RejectPlayerFriendRequestResponse::Status404_ThePlayer);
         }
 
-        self.publish_stream_event(friend_request_rejected_event(sender, receiver))
-            .await;
+        self.publish_stream_event(friend_request_rejected_event(
+            players.sender,
+            players.receiver,
+        ))
+        .await;
         Ok(RejectPlayerFriendRequestResponse::Status204_TheFriendRequestWasRejectedSuccessfully)
     }
 
@@ -758,7 +775,7 @@ impl Players<String> for Api {
         if path_params.player_id == path_params.friend_id {
             return Ok(RemovePlayerFriendResponse::Status400_TheRequestIsInvalid);
         }
-        let Some((friend, player)) = self
+        let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.friend_id)
             .await?
         else {
@@ -785,7 +802,7 @@ impl Players<String> for Api {
             return Ok(RemovePlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
         }
 
-        self.publish_stream_event(friend_removed_event(player, friend))
+        self.publish_stream_event(friend_removed_event(players.receiver, players.sender))
             .await;
 
         Ok(RemovePlayerFriendResponse::Status204_TheFriendWasRemovedSuccessfully)
@@ -804,7 +821,7 @@ impl Players<String> for Api {
                 RemovePlayerFriendRequestResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         }
-        let Some((sender, receiver)) = self
+        let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.sender_id)
             .await?
         else {
@@ -819,8 +836,11 @@ impl Players<String> for Api {
                 .await
                 .map_err(log_database_error)?;
         if request.rows_affected() > 0 {
-            self.publish_stream_event(friend_request_removed_event(sender, receiver))
-                .await;
+            self.publish_stream_event(friend_request_removed_event(
+                players.sender,
+                players.receiver,
+            ))
+            .await;
         }
 
         Ok(RemovePlayerFriendRequestResponse::Status204_TheFriendRequestWasRemovedSuccessfully)
