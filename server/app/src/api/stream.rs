@@ -491,7 +491,11 @@ mod tests {
             id,
             Nullable::Null,
             username.to_string(),
+            Nullable::Null,
             "offline".to_string(),
+            Nullable::Null,
+            Nullable::Null,
+            Nullable::Null,
             Nullable::Null,
             Nullable::Null,
         )

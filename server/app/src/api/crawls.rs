@@ -1,6 +1,7 @@
 use crate::api::stream::{crawl_created_event, crawl_deleted_event};
 use crate::api::{Api, from_nullable, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
+use crate::filters::is_valid_half_open_range;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
@@ -225,9 +226,9 @@ impl Crawls<String> for Api {
                 .as_ref()
                 .is_some_and(|address| !(1..=255).contains(&address.chars().count()))
             || query_params.port == Some(0)
-            || matches!(
-                (query_params.crawled_from, query_params.crawled_to),
-                (Some(from), Some(to)) if from >= to
+            || !is_valid_half_open_range(
+                query_params.crawled_from.as_ref(),
+                query_params.crawled_to.as_ref(),
             )
         {
             return Ok(ListCrawlsResponse::Status400_TheRequestIsInvalid);

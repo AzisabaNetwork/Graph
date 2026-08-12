@@ -4,10 +4,12 @@ use crate::api::stream::{
 };
 use crate::api::{Api, from_nullable, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
+use crate::filters::matches_half_open_range;
 use crate::mojang::PlayerDbError;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
+use chrono::{DateTime, Utc};
 use graph_api::apis::players::{
     AcceptPlayerFriendRequestResponse, AddPlayerFriendRequestResponse, AddPlayerFriendResponse,
     GetPlayerByIdResponse, ListPlayerFriendRequestsResponse, ListPlayerFriendsResponse,
@@ -46,7 +48,11 @@ struct PlayerRecord {
     discord_id: Option<String>,
     status: String,
     current_server: Option<String>,
+    current_locale: Option<String>,
+    current_client_version: Option<String>,
     bio: Option<String>,
+    first_login_at: Option<DateTime<Utc>>,
+    last_seen_at: Option<DateTime<Utc>>,
 }
 
 impl PlayerRecord {
@@ -56,7 +62,11 @@ impl PlayerRecord {
             discord_id: None,
             status: PlayerStatus::Offline.to_string(),
             current_server: None,
+            current_locale: None,
+            current_client_version: None,
             bio: None,
+            first_login_at: None,
+            last_seen_at: None,
         }
     }
 
@@ -66,16 +76,24 @@ impl PlayerRecord {
             discord_id,
             status,
             current_server,
+            current_locale,
+            current_client_version,
             bio,
+            first_login_at,
+            last_seen_at,
         } = self;
 
         Player::new(
             id,
             into_nullable(include_details.then_some(discord_id).flatten()),
             username,
+            into_nullable(bio),
             status,
             into_nullable(current_server),
-            into_nullable(bio),
+            into_nullable(current_locale),
+            into_nullable(current_client_version),
+            into_nullable(first_login_at),
+            into_nullable(last_seen_at),
         )
     }
 
@@ -84,10 +102,33 @@ impl PlayerRecord {
         discord_id: Option<&str>,
         status: Option<&str>,
         cursor: Option<&PlayerCursor>,
+        query_params: &ListPlayersQueryParams,
     ) -> bool {
         discord_id.is_none_or(|discord_id| self.discord_id.as_deref() == Some(discord_id))
             && status.is_none_or(|status| self.status == status)
+            && query_params
+                .current_server
+                .as_deref()
+                .is_none_or(|value| self.current_server.as_deref() == Some(value))
+            && query_params
+                .current_locale
+                .as_deref()
+                .is_none_or(|value| self.current_locale.as_deref() == Some(value))
+            && query_params
+                .current_client_version
+                .as_deref()
+                .is_none_or(|value| self.current_client_version.as_deref() == Some(value))
             && cursor.is_none_or(|cursor| self.id > cursor.value)
+            && matches_half_open_range(
+                self.first_login_at.as_ref(),
+                query_params.first_login_from.as_ref(),
+                query_params.first_login_to.as_ref(),
+            )
+            && matches_half_open_range(
+                self.last_seen_at.as_ref(),
+                query_params.last_seen_from.as_ref(),
+                query_params.last_seen_to.as_ref(),
+            )
     }
 }
 
@@ -95,7 +136,8 @@ impl Api {
     async fn load_player_record(&self, id: Uuid) -> Result<PlayerRecord, String> {
         Ok(sqlx::query_as::<_, PlayerRecord>(
             r#"
-            SELECT id, discord_id, status, current_server, bio
+            SELECT id, discord_id, status, current_server, current_locale,
+                   current_client_version, bio, first_login_at, last_seen_at
             FROM players
             WHERE id = ?
             "#,
@@ -127,7 +169,9 @@ impl Api {
         }
 
         let mut query = QueryBuilder::<MySql>::new(
-            "SELECT id, discord_id, status, current_server, bio FROM players WHERE id IN (",
+            "SELECT id, discord_id, status, current_server, current_locale, \
+             current_client_version, bio, first_login_at, last_seen_at \
+             FROM players WHERE id IN (",
         );
         let mut separated = query.separated(", ");
         for id in ids {
@@ -625,7 +669,6 @@ impl Players<String> for Api {
         if query_params.discord_id.is_some() && !can_read_discord_id {
             return Ok(ListPlayersResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
         }
-
         let limit = query_params.limit.unwrap_or(DEFAULT_PLAYERS_LIMIT);
         if !(1..=MAX_PLAYERS_LIMIT).contains(&limit) {
             return Ok(ListPlayersResponse::Status400_TheRequestIsInvalid);
@@ -669,6 +712,7 @@ impl Players<String> for Api {
                 query_params.discord_id.as_deref(),
                 status.as_deref(),
                 cursor.as_ref(),
+                query_params,
             ) {
                 Vec::new()
             } else {
@@ -682,7 +726,8 @@ impl Players<String> for Api {
         }
 
         let mut query = QueryBuilder::<MySql>::new(
-            "SELECT id, discord_id, status, current_server, bio \
+            "SELECT id, discord_id, status, current_server, current_locale, \
+             current_client_version, bio, first_login_at, last_seen_at \
              FROM players WHERE 1 = 1",
         );
         if let Some(discord_id) = &query_params.discord_id {
@@ -690,6 +735,39 @@ impl Players<String> for Api {
         }
         if let Some(status) = status {
             query.push(" AND status = ").push_bind(status);
+        }
+        if let Some(current_server) = &query_params.current_server {
+            query
+                .push(" AND current_server = ")
+                .push_bind(current_server);
+        }
+        if let Some(current_locale) = &query_params.current_locale {
+            query
+                .push(" AND current_locale = ")
+                .push_bind(current_locale);
+        }
+        if let Some(current_client_version) = &query_params.current_client_version {
+            query
+                .push(" AND current_client_version = ")
+                .push_bind(current_client_version);
+        }
+        if let Some(first_login_from) = &query_params.first_login_from {
+            query
+                .push(" AND first_login_at >= ")
+                .push_bind(first_login_from);
+        }
+        if let Some(first_login_to) = &query_params.first_login_to {
+            query
+                .push(" AND first_login_at < ")
+                .push_bind(first_login_to);
+        }
+        if let Some(last_seen_from) = &query_params.last_seen_from {
+            query
+                .push(" AND last_seen_at >= ")
+                .push_bind(last_seen_from);
+        }
+        if let Some(last_seen_to) = &query_params.last_seen_to {
+            query.push(" AND last_seen_at < ").push_bind(last_seen_to);
         }
         if let Some(cursor) = cursor {
             query.push(" AND id > ").push_bind(cursor.value);
@@ -875,9 +953,13 @@ impl Players<String> for Api {
         }
 
         if body.discord_id.is_none()
+            && body.bio.is_none()
             && body.status.is_none()
             && body.current_server.is_none()
-            && body.bio.is_none()
+            && body.current_locale.is_none()
+            && body.current_client_version.is_none()
+            && body.first_login_at.is_none()
+            && body.last_seen_at.is_none()
         {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestIsInvalid);
         }
@@ -915,6 +997,11 @@ impl Players<String> for Api {
                 .push("discord_id = ")
                 .push_bind_unseparated(from_nullable(discord_id));
         }
+        if let Some(bio) = &body.bio {
+            updates
+                .push("bio = ")
+                .push_bind_unseparated(from_nullable(bio));
+        }
         if let Some(status) = status {
             updates.push("status = ").push_bind_unseparated(status);
         }
@@ -923,10 +1010,25 @@ impl Players<String> for Api {
                 .push("current_server = ")
                 .push_bind_unseparated(from_nullable(current_server));
         }
-        if let Some(bio) = &body.bio {
+        if let Some(current_locale) = &body.current_locale {
             updates
-                .push("bio = ")
-                .push_bind_unseparated(from_nullable(bio));
+                .push("current_locale = ")
+                .push_bind_unseparated(from_nullable(current_locale));
+        }
+        if let Some(current_client_version) = &body.current_client_version {
+            updates
+                .push("current_client_version = ")
+                .push_bind_unseparated(from_nullable(current_client_version));
+        }
+        if let Some(first_login_at) = &body.first_login_at {
+            updates
+                .push("first_login_at = ")
+                .push_bind_unseparated(from_nullable(first_login_at));
+        }
+        if let Some(last_seen_at) = &body.last_seen_at {
+            updates
+                .push("last_seen_at = ")
+                .push_bind_unseparated(from_nullable(last_seen_at));
         }
         query.push(" WHERE id = ").push_bind(path_params.player_id);
 
@@ -938,7 +1040,8 @@ impl Players<String> for Api {
 
         let record = sqlx::query_as::<_, PlayerRecord>(
             r#"
-            SELECT id, discord_id, status, current_server, bio
+            SELECT id, discord_id, status, current_server, current_locale,
+                   current_client_version, bio, first_login_at, last_seen_at
             FROM players
             WHERE id = ?
             "#,
@@ -1043,14 +1146,15 @@ mod tests {
     }
 
     #[test]
-    fn empty_player_record_matches_only_its_default_filters() {
+    fn empty_player_record_matches_persistent_filters() {
         let id = Uuid::from_u128(2);
         let record = PlayerRecord::empty(id);
         let discord_id = Some("123456789012345678");
+        let query = list_query_params();
 
-        assert!(record.matches_filters(None, Some("offline"), None));
-        assert!(!record.matches_filters(discord_id, None, None));
-        assert!(!record.matches_filters(None, Some("online"), None));
+        assert!(record.matches_filters(None, Some("offline"), None, &query));
+        assert!(!record.matches_filters(discord_id, None, None, &query));
+        assert!(!record.matches_filters(None, Some("online"), None, &query));
         assert!(!record.matches_filters(
             None,
             None,
@@ -1058,7 +1162,40 @@ mod tests {
                 value: id,
                 tie_breaker: id,
             }),
+            &query,
         ));
+    }
+
+    #[test]
+    fn player_record_matches_current_state_filters() {
+        let record = player_record();
+        let mut query = list_query_params();
+        query.current_server = Some("lobby".to_string());
+        query.current_locale = Some("ja_jp".to_string());
+        query.current_client_version = Some("1.21.8".to_string());
+
+        assert!(record.matches_filters(None, Some("online"), None, &query));
+        query.current_server = Some("survival".to_string());
+        assert!(!record.matches_filters(None, Some("online"), None, &query));
+    }
+
+    #[test]
+    fn database_fields_map_to_current_player_state() {
+        let player = player_record().into_list_item("Steve".to_string(), true);
+
+        assert_eq!(player.status, PlayerStatus::Online.to_string());
+        assert_eq!(
+            player.current_server,
+            Nullable::Present("lobby".to_string())
+        );
+        assert_eq!(
+            player.current_locale,
+            Nullable::Present("ja_jp".to_string())
+        );
+        assert_eq!(
+            player.current_client_version,
+            Nullable::Present("1.21.8".to_string())
+        );
     }
 
     #[test]
@@ -1098,7 +1235,28 @@ mod tests {
             discord_id: Some("123456789012345678".to_string()),
             status: PlayerStatus::Online.to_string(),
             current_server: Some("lobby".to_string()),
+            current_locale: Some("ja_jp".to_string()),
+            current_client_version: Some("1.21.8".to_string()),
             bio: None,
+            first_login_at: None,
+            last_seen_at: None,
+        }
+    }
+
+    fn list_query_params() -> ListPlayersQueryParams {
+        ListPlayersQueryParams {
+            limit: None,
+            cursor: None,
+            username: None,
+            discord_id: None,
+            status: None,
+            current_server: None,
+            current_locale: None,
+            current_client_version: None,
+            first_login_from: None,
+            first_login_to: None,
+            last_seen_from: None,
+            last_seen_to: None,
         }
     }
 }
