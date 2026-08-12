@@ -88,10 +88,12 @@ async fn main() {
         api.punishments_pool().clone(),
         api.mojang_profile_resolver().clone(),
     );
+
     let mcp_service = StreamableHttpService::new(
         move || Ok(mcp.clone()),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
+            .with_allowed_hosts(["graph.azisaba.net"])
             .with_legacy_session_mode(false)
             .with_json_response(true),
     );
