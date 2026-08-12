@@ -10,13 +10,13 @@ aws-credential-types = "1"
 aws-sdk-s3 = "1"
 axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
-base64 = "0.22.1"
+base64 = "0.23.1"
 chrono = { version = "0.4", features = ["serde"] }
 getrandom = "0.4.3"
 graph-api = { path = "../generated" }
 http = "1"
 headers = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 redis = { version = "1.5.0", features = ["aio", "connection-manager", "tokio-comp"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
@@ -25,8 +25,7 @@ sqlx = { version = "0.9.0", features = ["runtime-tokio", "migrate", "uuid", "chr
 subtle = "2.6.1"
 tokio = { version = "1.52.3", features = ["macros", "net", "rt-multi-thread", "sync"] }
 tokio-stream = { version = "0.1.18", features = ["sync", "time"] }
-tower = "0.5.3"
-tower-http = { version = "0.6.7", features = ["trace"] }
+tower-http = { version = "0.7.0", features = ["trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4"] }
