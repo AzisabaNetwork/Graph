@@ -269,13 +269,20 @@ impl Players<String> for Api {
         }
 
         transaction.commit().await.map_err(log_database_error)?;
+
         self.publish_stream_event(friend_request_accepted_event(
             players.sender.clone(),
             players.receiver.clone(),
         ))
         .await;
-        self.publish_stream_event(friend_added_event(players.receiver, players.sender))
+        self.publish_stream_event(friend_added_event(
+            players.receiver.clone(),
+            players.sender.clone(),
+        ))
+        .await;
+        self.publish_stream_event(friend_added_event(players.sender, players.receiver))
             .await;
+
         Ok(AcceptPlayerFriendRequestResponse::Status204_TheFriendRequestWasAcceptedSuccessfully)
     }
 
@@ -348,7 +355,13 @@ impl Players<String> for Api {
         else {
             return Err("PlayerDB profile disappeared after friendship creation".to_string());
         };
-        self.publish_stream_event(friend_added_event(players.receiver, players.sender))
+
+        self.publish_stream_event(friend_added_event(
+            players.receiver.clone(),
+            players.sender.clone(),
+        ))
+        .await;
+        self.publish_stream_event(friend_added_event(players.sender, players.receiver))
             .await;
 
         let friend = self
