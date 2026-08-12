@@ -1,6 +1,7 @@
 use crate::api::{Api, into_nullable};
 use crate::auth::credentials::ApiKeyCredentials;
 use crate::auth::scope::ApiKeyScopeExt;
+use crate::filters::is_valid_half_open_range;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
@@ -48,10 +49,10 @@ impl ApiKeyRecord {
         ApiKey::new(
             name,
             public_id,
+            into_nullable(player_id),
             item_scopes,
             created_at,
             into_nullable(expires_at),
-            into_nullable(player_id),
         )
     }
 }
@@ -167,10 +168,10 @@ impl ApiKeys<String> for Api {
                 CreateApiKey201Response::new(
                     body.name.clone(),
                     public_id,
+                    into_nullable(player_id),
                     scopes,
                     created_at,
                     into_nullable(expires_at),
-                    into_nullable(player_id),
                     token,
                 ),
             ),
@@ -258,7 +259,16 @@ impl ApiKeys<String> for Api {
         }
 
         let limit = query_params.limit.unwrap_or(DEFAULT_API_KEYS_LIMIT);
-        if !(1..=MAX_API_KEYS_LIMIT).contains(&limit) {
+        if !(1..=MAX_API_KEYS_LIMIT).contains(&limit)
+            || !is_valid_half_open_range(
+                query_params.created_from.as_ref(),
+                query_params.created_to.as_ref(),
+            )
+            || !is_valid_half_open_range(
+                query_params.expires_from.as_ref(),
+                query_params.expires_to.as_ref(),
+            )
+        {
             return Ok(ListApiKeysResponse::Status400_TheRequestIsInvalid);
         }
         let limit = limit as usize;
@@ -275,6 +285,21 @@ impl ApiKeys<String> for Api {
         let mut query = QueryBuilder::<MySql>::new(
             "SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id FROM api_keys k LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id WHERE 1 = 1",
         );
+        if let Some(player_id) = query_params.player_id {
+            query.push(" AND p.player_id = ").push_bind(player_id);
+        }
+        if let Some(created_from) = &query_params.created_from {
+            query.push(" AND k.created_at >= ").push_bind(created_from);
+        }
+        if let Some(created_to) = &query_params.created_to {
+            query.push(" AND k.created_at < ").push_bind(created_to);
+        }
+        if let Some(expires_from) = &query_params.expires_from {
+            query.push(" AND k.expires_at >= ").push_bind(expires_from);
+        }
+        if let Some(expires_to) = &query_params.expires_to {
+            query.push(" AND k.expires_at < ").push_bind(expires_to);
+        }
         if let Some(cursor) = cursor {
             query
                 .push(" AND (k.created_at < ")
@@ -659,10 +684,10 @@ mod tests {
         ApiKey::new(
             "test".to_string(),
             "test".to_string(),
+            into_nullable(player_id),
             scopes.iter().map(|scope| (*scope).to_string()).collect(),
             Utc::now(),
             Nullable::Null,
-            into_nullable(player_id),
         )
     }
 
@@ -736,9 +761,9 @@ mod tests {
         let parent = ApiKey::new(
             "bootstrap".to_string(),
             credentials.public_id().to_string(),
+            Nullable::Null,
             vec!["*".to_string()],
             Utc::now(),
-            Nullable::Null,
             Nullable::Null,
         );
         let mut request = CreateApiKeyRequest::new(

@@ -4,6 +4,7 @@ use crate::api::stream::{
 };
 use crate::api::{Api, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
+use crate::filters::is_valid_half_open_range;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
@@ -509,7 +510,11 @@ impl Punishments<String> for Api {
             );
         }
         let limit = query.limit.unwrap_or(DEFAULT_LIMIT);
-        if !(1..=MAX_LIMIT).contains(&limit) {
+        if !(1..=MAX_LIMIT).contains(&limit)
+            || !is_valid_half_open_range(query.created_from.as_ref(), query.created_to.as_ref())
+            || !is_valid_half_open_range(query.expires_from.as_ref(), query.expires_to.as_ref())
+            || !is_valid_half_open_range(query.revoked_from.as_ref(), query.revoked_to.as_ref())
+        {
             return Ok(graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestIsInvalid);
         }
         let kind =
@@ -552,6 +557,36 @@ impl Punishments<String> for Api {
             } else {
                 builder.push(" AND p.id IS NULL");
             }
+        }
+        if let Some(created_from) = query.created_from {
+            builder
+                .push(" AND h.start >= ")
+                .push_bind(created_from.timestamp_millis());
+        }
+        if let Some(created_to) = query.created_to {
+            builder
+                .push(" AND h.start < ")
+                .push_bind(created_to.timestamp_millis());
+        }
+        if let Some(expires_from) = query.expires_from {
+            builder
+                .push(" AND h.end >= ")
+                .push_bind(expires_from.timestamp_millis());
+        }
+        if let Some(expires_to) = query.expires_to {
+            builder
+                .push(" AND h.end < ")
+                .push_bind(expires_to.timestamp_millis());
+        }
+        if let Some(revoked_from) = query.revoked_from {
+            builder
+                .push(" AND u.timestamp >= ")
+                .push_bind(revoked_from.timestamp_millis());
+        }
+        if let Some(revoked_to) = query.revoked_to {
+            builder
+                .push(" AND u.timestamp < ")
+                .push_bind(revoked_to.timestamp_millis());
         }
         if let Some(cursor) = &cursor {
             builder
@@ -1093,13 +1128,13 @@ mod tests {
         let key = ApiKey::new(
             "punishment integration key".to_string(),
             "integration".to_string(),
+            Nullable::Present(actor_id),
             vec![
                 "punishments:read".to_string(),
                 "punishments:write".to_string(),
             ],
             Utc::now(),
             Nullable::Null,
-            Nullable::Present(actor_id),
         );
         let target_one = Uuid::new_v4().to_string();
         let target_two = Uuid::new_v4().to_string();
@@ -1187,6 +1222,12 @@ mod tests {
                     r#type: Some("ban".to_string()),
                     server: Some("TESTSERVER".to_string()),
                     active: Some(true),
+                    created_from: None,
+                    created_to: None,
+                    expires_from: None,
+                    expires_to: None,
+                    revoked_from: None,
+                    revoked_to: None,
                     cursor: None,
                     limit: Some(1),
                 },
@@ -1213,6 +1254,12 @@ mod tests {
                     r#type: Some("ban".to_string()),
                     server: Some("testserver".to_string()),
                     active: Some(true),
+                    created_from: None,
+                    created_to: None,
+                    expires_from: None,
+                    expires_to: None,
+                    revoked_from: None,
+                    revoked_to: None,
                     cursor: Some(cursor),
                     limit: Some(1),
                 },

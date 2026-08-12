@@ -1,8 +1,8 @@
 mod api;
 mod auth;
+mod filters;
 mod mojang;
 mod pagination;
-mod filters;
 
 use crate::api::non_empty_env;
 use api::{Api, ObjectStorage};

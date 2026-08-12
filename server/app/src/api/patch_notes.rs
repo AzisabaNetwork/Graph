@@ -1,6 +1,7 @@
 use crate::api::stream::{patch_note_created_event, patch_note_deleted_event};
 use crate::api::{Api, into_nullable};
 use crate::auth::scope::ApiKeyScopeExt;
+use crate::filters::is_valid_half_open_range;
 use crate::pagination::Cursor;
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
@@ -371,6 +372,13 @@ impl PatchNotes<String> for Api {
             .unwrap_or(DEFAULT_PATCH_NOTES_LIMIT)
             .clamp(1, MAX_PATCH_NOTES_LIMIT) as usize;
 
+        if !is_valid_half_open_range(
+            query_params.created_from.as_ref(),
+            query_params.created_to.as_ref(),
+        ) {
+            return Ok(ListPatchNotesResponse::Status400_TheRequestIsInvalid);
+        }
+
         let target = match query_params.target.as_deref() {
             Some(target) => match PatchNoteTarget::from_str(target) {
                 Ok(target) => Some(target.to_string()),
@@ -409,6 +417,18 @@ impl PatchNotes<String> for Api {
 
         if let Some(category) = category {
             query.push(" AND category = ").push_bind(category);
+        }
+
+        if let Some(author_id) = &query_params.author_id {
+            query.push(" AND author_id = ").push_bind(author_id);
+        }
+
+        if let Some(created_from) = &query_params.created_from {
+            query.push(" AND created_at >= ").push_bind(created_from);
+        }
+
+        if let Some(created_to) = &query_params.created_to {
+            query.push(" AND created_at < ").push_bind(created_to);
         }
 
         if let Some(cursor) = cursor {

@@ -17,6 +17,12 @@ properties:
   publicId:
     $ref: "../../openapi.yaml#/components/schemas/ApiKeyId"
     readOnly: true
+  playerId:
+    type:
+      - string
+      - "null"
+    format: uuid
+    description: The player linked to this API key, or `null` if the key is not linked to a player.
   scopes:
     type: array
     uniqueItems: true
@@ -34,9 +40,3 @@ properties:
       - "null"
     format: date-time
     description: The date and time at which the API key expires, or `null` if it does not expire.
-  playerId:
-    type:
-      - string
-      - "null"
-    format: uuid
-    description: The player linked to this API key, or `null` if the key is not linked to a player.

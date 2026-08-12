@@ -31,6 +31,24 @@ get:
       description: The category used to filter patch notes.
       schema:
         $ref: "../../openapi.yaml#/components/schemas/PatchNoteCategory"
+    - name: authorId
+      in: query
+      description: The unique identifier of the author used to filter patch notes.
+      schema:
+        type: string
+        format: uuid
+    - name: createdFrom
+      in: query
+      description: The inclusive lower bound of the creation date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: createdTo
+      in: query
+      description: The exclusive upper bound of the creation date and time.
+      schema:
+        type: string
+        format: date-time
   responses:
     "200":
       description: The patch notes were retrieved successfully.

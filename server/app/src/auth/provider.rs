@@ -90,10 +90,10 @@ impl ApiAuthBasic for Api {
         Some(ApiKey::new(
             api_key.name,
             api_key.public_id,
+            into_nullable(api_key.player_id),
             scopes,
             api_key.created_at,
             expires_at,
-            into_nullable(api_key.player_id),
         ))
     }
 }

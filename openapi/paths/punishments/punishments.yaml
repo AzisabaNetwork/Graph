@@ -41,6 +41,42 @@ get:
       description: The active status used to filter punishments.
       schema:
         type: boolean
+    - name: createdFrom
+      in: query
+      description: The inclusive lower bound of the creation date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: createdTo
+      in: query
+      description: The exclusive upper bound of the creation date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: expiresFrom
+      in: query
+      description: The inclusive lower bound of the expiration date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: expiresTo
+      in: query
+      description: The exclusive upper bound of the expiration date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: revokedFrom
+      in: query
+      description: The inclusive lower bound of the revocation date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: revokedTo
+      in: query
+      description: The exclusive upper bound of the revocation date and time.
+      schema:
+        type: string
+        format: date-time
   responses:
     "200":
       description: The punishments were retrieved successfully.

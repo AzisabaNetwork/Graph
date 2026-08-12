@@ -21,6 +21,36 @@ get:
       description: The cursor returned by the previous request.
       schema:
         type: string
+    - name: playerId
+      in: query
+      description: The unique identifier of the player used to filter API keys.
+      schema:
+        type: string
+        format: uuid
+    - name: createdFrom
+      in: query
+      description: The inclusive lower bound of the creation date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: createdTo
+      in: query
+      description: The exclusive upper bound of the creation date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: expiresFrom
+      in: query
+      description: The inclusive lower bound of the expiration date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: expiresTo
+      in: query
+      description: The exclusive upper bound of the expiration date and time.
+      schema:
+        type: string
+        format: date-time
   responses:
     "200":
       description: The API keys were retrieved successfully.

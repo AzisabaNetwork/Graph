@@ -56,9 +56,9 @@ mod tests {
         ApiKey::new(
             "Test API key".to_string(),
             "test-public-id".to_string(),
+            Nullable::Null,
             scopes.iter().map(ToString::to_string).collect(),
             Utc::now(),
-            Nullable::Null,
             Nullable::Null,
         )
     }

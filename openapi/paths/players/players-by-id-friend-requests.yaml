@@ -28,7 +28,8 @@ get:
       in: query
       description: The unique identifier of the sender used to filter friend requests.
       schema:
-        $ref: "../../openapi.yaml#/components/schemas/PlayerId"
+        type: string
+        format: uuid
   responses:
     "200":
       description: The player's friend requests were retrieved successfully.
