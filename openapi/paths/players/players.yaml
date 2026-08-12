@@ -41,6 +41,48 @@ get:
       description: The online status used to filter players.
       schema:
         $ref: "../../openapi.yaml#/components/schemas/PlayerStatus"
+    - name: currentServer
+      in: query
+      description: The server name used to filter players.
+      schema:
+        type: string
+        maxLength: 255
+    - name: currentLocale
+      in: query
+      description: The locale used to filter players.
+      schema:
+        type: string
+        maxLength: 255
+    - name: currentClientVersion
+      in: query
+      description: The client version used to filter players.
+      schema:
+        type: string
+        maxLength: 255
+    - name: firstLoginFrom
+      in: query
+      description: The inclusive lower bound of the first login date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: firstLoginTo
+      in: query
+      description: The exclusive upper bound of the first login date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: lastSeenFrom
+      in: query
+      description: The inclusive lower bound of the last seen date and time.
+      schema:
+        type: string
+        format: date-time
+    - name: lastSeenTo
+      in: query
+      description: The exclusive upper bound of the last seen date and time.
+      schema:
+        type: string
+        format: date-time
   responses:
     "200":
       description: The players were retrieved successfully.
