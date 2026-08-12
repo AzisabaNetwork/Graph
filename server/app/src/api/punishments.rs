@@ -1,11 +1,12 @@
+use crate::api::Api;
+use crate::api::filters::is_valid_half_open_range;
+use crate::api::pagination::Cursor;
 use crate::api::stream::{
     punishment_created_event, punishment_proof_created_event, punishment_proof_deleted_event,
     punishment_proof_updated_event, punishment_revoked_event, punishment_updated_event,
 };
-use crate::api::{Api, into_nullable};
-use crate::auth::scope::ApiKeyScopeExt;
-use crate::filters::is_valid_half_open_range;
-use crate::pagination::Cursor;
+use crate::auth::ApiKeyScopeChecker;
+use crate::records::{ProofRecord, PunishmentProofRecord, PunishmentRecord};
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Utc};
@@ -14,149 +15,13 @@ use graph_api::models::*;
 use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{FromRow, MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder};
 use std::{collections::BTreeMap, net::IpAddr};
 use uuid::Uuid;
 
 const DEFAULT_LIMIT: u8 = 20;
 const MAX_LIMIT: u8 = 100;
 type PunishmentCursor = Cursor<i64, u64>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StoredPunishmentType {
-    Ban,
-    TempBan,
-    IpBan,
-    TempIpBan,
-    Mute,
-    TempMute,
-    IpMute,
-    TempIpMute,
-    Warning,
-    Caution,
-    Kick,
-    Note,
-}
-
-impl StoredPunishmentType {
-    fn from_api(value: &str) -> Option<Self> {
-        Some(match value {
-            "ban" => Self::Ban,
-            "tempBan" => Self::TempBan,
-            "ipBan" => Self::IpBan,
-            "tempIpBan" => Self::TempIpBan,
-            "mute" => Self::Mute,
-            "tempMute" => Self::TempMute,
-            "ipMute" => Self::IpMute,
-            "tempIpMute" => Self::TempIpMute,
-            "warning" => Self::Warning,
-            "caution" => Self::Caution,
-            "kick" => Self::Kick,
-            "note" => Self::Note,
-            _ => return None,
-        })
-    }
-
-    fn from_db(value: &str) -> Option<Self> {
-        Some(match value {
-            "BAN" => Self::Ban,
-            "TEMP_BAN" => Self::TempBan,
-            "IP_BAN" => Self::IpBan,
-            "TEMP_IP_BAN" => Self::TempIpBan,
-            "MUTE" => Self::Mute,
-            "TEMP_MUTE" => Self::TempMute,
-            "IP_MUTE" => Self::IpMute,
-            "TEMP_IP_MUTE" => Self::TempIpMute,
-            "WARNING" => Self::Warning,
-            "CAUTION" => Self::Caution,
-            "KICK" => Self::Kick,
-            "NOTE" => Self::Note,
-            _ => return None,
-        })
-    }
-
-    fn api(self) -> &'static str {
-        match self {
-            Self::Ban => "ban",
-            Self::TempBan => "tempBan",
-            Self::IpBan => "ipBan",
-            Self::TempIpBan => "tempIpBan",
-            Self::Mute => "mute",
-            Self::TempMute => "tempMute",
-            Self::IpMute => "ipMute",
-            Self::TempIpMute => "tempIpMute",
-            Self::Warning => "warning",
-            Self::Caution => "caution",
-            Self::Kick => "kick",
-            Self::Note => "note",
-        }
-    }
-
-    fn db(self) -> &'static str {
-        match self {
-            Self::Ban => "BAN",
-            Self::TempBan => "TEMP_BAN",
-            Self::IpBan => "IP_BAN",
-            Self::TempIpBan => "TEMP_IP_BAN",
-            Self::Mute => "MUTE",
-            Self::TempMute => "TEMP_MUTE",
-            Self::IpMute => "IP_MUTE",
-            Self::TempIpMute => "TEMP_IP_MUTE",
-            Self::Warning => "WARNING",
-            Self::Caution => "CAUTION",
-            Self::Kick => "KICK",
-            Self::Note => "NOTE",
-        }
-    }
-
-    fn temporary(self) -> bool {
-        matches!(
-            self,
-            Self::TempBan | Self::TempIpBan | Self::TempMute | Self::TempIpMute
-        )
-    }
-
-    fn ip_based(self) -> bool {
-        matches!(
-            self,
-            Self::IpBan | Self::TempIpBan | Self::IpMute | Self::TempIpMute
-        )
-    }
-}
-
-#[derive(Debug, FromRow)]
-struct PunishmentRecord {
-    id: i64,
-    name: String,
-    target: String,
-    reason: String,
-    operator: String,
-    r#type: String,
-    start: i64,
-    end: i64,
-    server: String,
-    extra: String,
-    active: bool,
-    revocation_id: Option<i64>,
-    revocation_reason: Option<String>,
-    revocation_timestamp: Option<i64>,
-    revocation_operator: Option<String>,
-}
-
-#[derive(Debug, FromRow)]
-struct ProofRecord {
-    id: i64,
-    text: String,
-    public: bool,
-}
-
-#[derive(Debug, FromRow)]
-struct PunishmentProofRecord {
-    punish_id: i64,
-    id: i64,
-    text: String,
-    public: bool,
-}
 
 fn can_read(key: &ApiKey) -> bool {
     key.has_scope(&ApiKeyScope::PunishmentsColonRead)
@@ -198,8 +63,8 @@ fn punishable_ip(value: &str) -> bool {
         || a >= 240)
 }
 
-fn normalize_target(kind: StoredPunishmentType, target: &str) -> Option<String> {
-    if kind.ip_based() {
+fn normalize_target(kind: PunishmentType, target: &str) -> Option<String> {
+    if is_ip_based(kind) {
         punishable_ip(target).then(|| {
             target
                 .parse::<IpAddr>()
@@ -214,21 +79,17 @@ fn normalize_target(kind: StoredPunishmentType, target: &str) -> Option<String> 
 }
 
 fn end_millis(
-    kind: StoredPunishmentType,
+    kind: PunishmentType,
     expires_at: &Nullable<DateTime<Utc>>,
     now: DateTime<Utc>,
 ) -> Option<i64> {
-    match (kind.temporary(), expires_at) {
+    match (is_temporary(kind), expires_at) {
         (true, Nullable::Present(expires_at)) if *expires_at > now => {
             Some(expires_at.timestamp_millis())
         }
         (false, Nullable::Null) => Some(-1),
         _ => None,
     }
-}
-
-fn seen(extra: &str) -> bool {
-    extra.split(',').any(|flag| flag == "SEEN")
 }
 
 fn with_seen(extra: &str, value: bool) -> String {
@@ -243,29 +104,40 @@ fn with_seen(extra: &str, value: bool) -> String {
     flags.join(",")
 }
 
-fn millis(value: i64) -> Result<DateTime<Utc>, String> {
-    DateTime::from_timestamp_millis(value)
-        .ok_or_else(|| "invalid epoch milliseconds in punishments database".to_string())
+fn is_temporary(kind: PunishmentType) -> bool {
+    matches!(
+        kind,
+        PunishmentType::TempBan
+            | PunishmentType::TempIpBan
+            | PunishmentType::TempMute
+            | PunishmentType::TempIpMute
+    )
 }
 
-fn row_id(value: i64) -> Result<u64, String> {
-    u64::try_from(value).map_err(|_| "negative identifier in punishments database".to_string())
+fn is_ip_based(kind: PunishmentType) -> bool {
+    matches!(
+        kind,
+        PunishmentType::IpBan
+            | PunishmentType::TempIpBan
+            | PunishmentType::IpMute
+            | PunishmentType::TempIpMute
+    )
 }
 
-impl ProofRecord {
-    fn into_api(self) -> Result<Proof, String> {
-        Ok(Proof::new(row_id(self.id)?, self.text, self.public))
-    }
-}
-
-impl PunishmentProofRecord {
-    fn into_api(self) -> Result<Proof, String> {
-        ProofRecord {
-            id: self.id,
-            text: self.text,
-            public: self.public,
-        }
-        .into_api()
+fn punishment_type_database_value(kind: PunishmentType) -> &'static str {
+    match kind {
+        PunishmentType::Ban => "BAN",
+        PunishmentType::TempBan => "TEMP_BAN",
+        PunishmentType::IpBan => "IP_BAN",
+        PunishmentType::TempIpBan => "TEMP_IP_BAN",
+        PunishmentType::Mute => "MUTE",
+        PunishmentType::TempMute => "TEMP_MUTE",
+        PunishmentType::IpMute => "IP_MUTE",
+        PunishmentType::TempIpMute => "TEMP_IP_MUTE",
+        PunishmentType::Warning => "WARNING",
+        PunishmentType::Caution => "CAUTION",
+        PunishmentType::Kick => "KICK",
+        PunishmentType::Note => "NOTE",
     }
 }
 
@@ -279,7 +151,7 @@ impl Api {
         .await
         .map_err(db_error)?
         .into_iter()
-        .map(ProofRecord::into_api)
+        .map(Proof::try_from)
         .collect()
     }
 
@@ -311,57 +183,9 @@ impl Api {
             proofs
                 .entry(punishment_id)
                 .or_default()
-                .push(row.into_api()?);
+                .push(row.into_proof()?);
         }
         Ok(proofs)
-    }
-
-    fn record_into_api(
-        &self,
-        record: PunishmentRecord,
-        proofs: Vec<Proof>,
-    ) -> Result<Punishment, String> {
-        let kind = StoredPunishmentType::from_db(&record.r#type)
-            .ok_or_else(|| format!("unknown punishment type in database: {}", record.r#type))?;
-        let actor_id = Uuid::parse_str(&record.operator)
-            .map_err(|_| "invalid punishment operator UUID in database".to_string())?;
-        let expires_at = if record.end == -1 {
-            Nullable::Null
-        } else {
-            Nullable::Present(millis(record.end)?)
-        };
-        let revocation = match (
-            record.revocation_id,
-            record.revocation_reason,
-            record.revocation_timestamp,
-            record.revocation_operator,
-        ) {
-            (Some(id), Some(reason), Some(timestamp), Some(operator)) => {
-                Nullable::Present(Revocation1::new(
-                    row_id(id)?,
-                    reason,
-                    Uuid::parse_str(&operator)
-                        .map_err(|_| "invalid revocation operator UUID in database".to_string())?,
-                    millis(timestamp)?,
-                ))
-            }
-            _ => Nullable::Null,
-        };
-        Ok(Punishment::new(
-            row_id(record.id)?,
-            record.name,
-            record.target,
-            kind.api().to_string(),
-            record.reason,
-            actor_id,
-            millis(record.start)?,
-            expires_at,
-            record.server,
-            seen(&record.extra),
-            record.active,
-            proofs,
-            revocation,
-        ))
     }
 
     async fn fetch_punishment(&self, id: i64) -> Result<Option<Punishment>, String> {
@@ -371,7 +195,7 @@ impl Api {
         match record {
             Some(record) => {
                 let proofs = self.load_proofs(record.id).await?;
-                self.record_into_api(record, proofs).map(Some)
+                record.into_punishment(proofs).map(Some)
             }
             None => Ok(None),
         }
@@ -405,7 +229,7 @@ impl Api {
         .fetch_optional(self.punishments_pool())
         .await
         .map_err(db_error)?
-        .map(ProofRecord::into_api)
+        .map(Proof::try_from)
         .transpose()
     }
 }
@@ -427,7 +251,7 @@ impl Punishments<String> for Api {
                 CreatePunishmentResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
             );
         };
-        let Some(kind) = StoredPunishmentType::from_api(&body.r_type) else {
+        let Ok(kind) = body.r_type.parse::<PunishmentType>() else {
             return Ok(CreatePunishmentResponse::Status400_TheRequestIsInvalid);
         };
         let now = Utc::now();
@@ -443,7 +267,7 @@ impl Punishments<String> for Api {
         let server = body.server.to_lowercase();
         let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
         let conflict = sqlx::query_scalar::<_, i64>("SELECT id FROM punishments WHERE target = ? AND type = ? AND server = ? LIMIT 1 FOR UPDATE")
-            .bind(&target).bind(kind.db()).bind(&server).fetch_optional(&mut *tx).await.map_err(db_error)?;
+            .bind(&target).bind(punishment_type_database_value(kind)).bind(&server).fetch_optional(&mut *tx).await.map_err(db_error)?;
         if conflict.is_some() {
             tx.rollback().await.map_err(db_error)?;
             return Ok(
@@ -451,7 +275,7 @@ impl Punishments<String> for Api {
             );
         }
         let result = sqlx::query("INSERT INTO punishmentHistory (name, target, reason, operator, type, start, end, server, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')")
-            .bind(&body.target_name).bind(&target).bind(&body.reason).bind(actor_id.to_string()).bind(kind.db())
+            .bind(&body.target_name).bind(&target).bind(&body.reason).bind(actor_id.to_string()).bind(punishment_type_database_value(kind))
             .bind(now.timestamp_millis()).bind(end).bind(&server).execute(&mut *tx).await.map_err(db_error)?;
         let id = i64::try_from(result.last_insert_id())
             .map_err(|_| "punishment ID exceeds signed 64-bit range".to_string())?;
@@ -470,6 +294,156 @@ impl Punishments<String> for Api {
         self.publish_stream_event(punishment_created_event(punishment.clone()))
             .await;
         Ok(CreatePunishmentResponse::Status201_ThePunishmentWasCreatedSuccessfully(punishment))
+    }
+
+    async fn create_punishment_proof(
+        &self,
+        _: &Method,
+        _: &Host,
+        _: &CookieJar,
+        key: &ApiKey,
+        path: &CreatePunishmentProofPathParams,
+        body: &CreatePunishmentProofRequest,
+    ) -> Result<CreatePunishmentProofResponse, String> {
+        if write_actor(key).is_none() {
+            return Ok(CreatePunishmentProofResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
+        }
+        if !non_empty(&body.text) {
+            return Ok(CreatePunishmentProofResponse::Status400_TheRequestIsInvalid);
+        }
+        let Ok(id) = i64::try_from(path.punishment_id) else {
+            return Ok(CreatePunishmentProofResponse::Status404_TheActivePunishmentWasNotFound);
+        };
+        let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
+        if sqlx::query_scalar::<_, i64>("SELECT id FROM punishments WHERE id = ? FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(db_error)?
+            .is_none()
+        {
+            tx.rollback().await.map_err(db_error)?;
+            return Ok(CreatePunishmentProofResponse::Status404_TheActivePunishmentWasNotFound);
+        }
+        let result = sqlx::query("INSERT INTO proofs (punish_id, text, public) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(&body.text)
+            .bind(body.public)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        let proof_id = i64::try_from(result.last_insert_id())
+            .map_err(|_| "proof ID exceeds signed 64-bit range".to_string())?;
+        tx.commit().await.map_err(db_error)?;
+        let proof = self
+            .fetch_proof(id, proof_id)
+            .await?
+            .ok_or_else(|| "created proof disappeared".to_string())?;
+        self.publish_stream_event(punishment_proof_created_event(
+            path.punishment_id,
+            proof.clone(),
+        ))
+        .await;
+        Ok(CreatePunishmentProofResponse::Status201_TheProofWasCreatedSuccessfully(proof))
+    }
+
+    async fn delete_punishment_by_id(
+        &self,
+        _: &Method,
+        _: &Host,
+        _: &CookieJar,
+        key: &ApiKey,
+        path: &DeletePunishmentByIdPathParams,
+        body: &DeletePunishmentByIdRequest,
+    ) -> Result<DeletePunishmentByIdResponse, String> {
+        let Some(actor_id) = write_actor(key) else {
+            return Ok(
+                DeletePunishmentByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        };
+        if !non_empty(&body.reason) {
+            return Ok(DeletePunishmentByIdResponse::Status400_TheRequestIsInvalid);
+        }
+        let Ok(id) = i64::try_from(path.punishment_id) else {
+            return Ok(DeletePunishmentByIdResponse::Status404_TheActivePunishmentWasNotFound);
+        };
+        let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
+        let deleted = sqlx::query("DELETE FROM punishments WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?
+            .rows_affected();
+        if deleted == 0 {
+            tx.rollback().await.map_err(db_error)?;
+            return Ok(DeletePunishmentByIdResponse::Status404_TheActivePunishmentWasNotFound);
+        }
+        sqlx::query(
+            "INSERT INTO unpunish (punish_id, reason, timestamp, operator) VALUES (?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(&body.reason)
+        .bind(Utc::now().timestamp_millis())
+        .bind(actor_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+        sqlx::query(
+            "INSERT INTO events (event_id, data, handled) VALUES ('removed_punishment', ?, 1)",
+        )
+        .bind(serde_json::json!({"punish_id": id}).to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+        tx.commit().await.map_err(db_error)?;
+        let punishment = self
+            .fetch_punishment(id)
+            .await?
+            .ok_or_else(|| "revoked punishment disappeared".to_string())?;
+        self.publish_stream_event(punishment_revoked_event(punishment))
+            .await;
+        Ok(DeletePunishmentByIdResponse::Status204_ThePunishmentWasRevokedSuccessfully)
+    }
+
+    async fn delete_punishment_proof_by_id(
+        &self,
+        _: &Method,
+        _: &Host,
+        _: &CookieJar,
+        key: &ApiKey,
+        path: &DeletePunishmentProofByIdPathParams,
+    ) -> Result<DeletePunishmentProofByIdResponse, String> {
+        if write_actor(key).is_none() {
+            return Ok(DeletePunishmentProofByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
+        }
+        let (Ok(punishment_id), Ok(proof_id)) = (
+            i64::try_from(path.punishment_id),
+            i64::try_from(path.proof_id),
+        ) else {
+            return Ok(
+                DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound,
+            );
+        };
+        let proof = self.fetch_proof(punishment_id, proof_id).await?;
+        let Some(proof) = proof else {
+            return Ok(
+                DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound,
+            );
+        };
+        let affected = sqlx::query("DELETE FROM proofs WHERE id = ? AND punish_id = ?")
+            .bind(proof_id)
+            .bind(punishment_id)
+            .execute(self.punishments_pool())
+            .await
+            .map_err(db_error)?
+            .rows_affected();
+        if affected == 0 {
+            Ok(DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound)
+        } else {
+            self.publish_stream_event(punishment_proof_deleted_event(path.punishment_id, proof))
+                .await;
+            Ok(DeletePunishmentProofByIdResponse::Status204_TheProofWasDeletedSuccessfully)
+        }
     }
 
     async fn get_punishment_by_id(
@@ -496,6 +470,57 @@ impl Punishments<String> for Api {
         }
     }
 
+    async fn get_punishment_proof_by_id(
+        &self,
+        _: &Method,
+        _: &Host,
+        _: &CookieJar,
+        key: &ApiKey,
+        path: &GetPunishmentProofByIdPathParams,
+    ) -> Result<GetPunishmentProofByIdResponse, String> {
+        if !can_read(key) {
+            return Ok(GetPunishmentProofByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
+        }
+        let (Ok(punishment_id), Ok(proof_id)) = (
+            i64::try_from(path.punishment_id),
+            i64::try_from(path.proof_id),
+        ) else {
+            return Ok(GetPunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound);
+        };
+        match self.fetch_proof(punishment_id, proof_id).await? {
+            Some(proof) => Ok(
+                GetPunishmentProofByIdResponse::Status200_TheProofWasRetrievedSuccessfully(proof),
+            ),
+            None => Ok(GetPunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound),
+        }
+    }
+
+    async fn list_punishment_proofs(
+        &self,
+        _: &Method,
+        _: &Host,
+        _: &CookieJar,
+        key: &ApiKey,
+        path: &ListPunishmentProofsPathParams,
+    ) -> Result<ListPunishmentProofsResponse, String> {
+        if !can_read(key) {
+            return Ok(
+                ListPunishmentProofsResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+        let Ok(id) = i64::try_from(path.punishment_id) else {
+            return Ok(ListPunishmentProofsResponse::Status404_ThePunishmentWasNotFound);
+        };
+        if !self.punishment_exists(id, false).await? {
+            return Ok(ListPunishmentProofsResponse::Status404_ThePunishmentWasNotFound);
+        }
+        Ok(
+            ListPunishmentProofsResponse::Status200_TheProofsWereRetrievedSuccessfully(
+                self.load_proofs(id).await?,
+            ),
+        )
+    }
+
     async fn list_punishments(
         &self,
         _: &Method,
@@ -519,9 +544,9 @@ impl Punishments<String> for Api {
         }
         let kind =
             match query.r#type.as_deref() {
-                Some(value) => match StoredPunishmentType::from_api(value) {
-                    Some(kind) => Some(kind),
-                    None => return Ok(
+                Some(value) => match value.parse::<PunishmentType>() {
+                    Ok(kind) => Some(kind),
+                    Err(_) => return Ok(
                         graph_api::apis::punishments::ListPunishmentsResponse::Status400_TheRequestIsInvalid,
                     ),
                 },
@@ -544,7 +569,9 @@ impl Punishments<String> for Api {
             builder.push(" AND h.target = ").push_bind(target);
         }
         if let Some(kind) = kind {
-            builder.push(" AND h.type = ").push_bind(kind.db());
+            builder
+                .push(" AND h.type = ")
+                .push_bind(punishment_type_database_value(kind));
         }
         if let Some(server) = &query.server {
             builder
@@ -626,11 +653,14 @@ impl Punishments<String> for Api {
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
             let row_proofs = proofs.remove(&row.id).unwrap_or_default();
-            items.push(self.record_into_api(row, row_proofs)?);
+            items.push(row.into_punishment(row_proofs)?);
         }
         Ok(
             graph_api::apis::punishments::ListPunishmentsResponse::Status200_ThePunishmentsWereRetrievedSuccessfully(
-                ListPunishments200Response::new(items, into_nullable(next_cursor)),
+                ListPunishments200Response::new(
+                    items,
+                    next_cursor.map_or(Nullable::Null, Nullable::Present),
+                ),
             ),
         )
     }
@@ -707,166 +737,6 @@ impl Punishments<String> for Api {
         Ok(UpdatePunishmentByIdResponse::Status200_ThePunishmentWasUpdatedSuccessfully(value))
     }
 
-    async fn delete_punishment_by_id(
-        &self,
-        _: &Method,
-        _: &Host,
-        _: &CookieJar,
-        key: &ApiKey,
-        path: &DeletePunishmentByIdPathParams,
-        body: &DeletePunishmentByIdRequest,
-    ) -> Result<DeletePunishmentByIdResponse, String> {
-        let Some(actor_id) = write_actor(key) else {
-            return Ok(
-                DeletePunishmentByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
-            );
-        };
-        if !non_empty(&body.reason) {
-            return Ok(DeletePunishmentByIdResponse::Status400_TheRequestIsInvalid);
-        }
-        let Ok(id) = i64::try_from(path.punishment_id) else {
-            return Ok(DeletePunishmentByIdResponse::Status404_TheActivePunishmentWasNotFound);
-        };
-        let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
-        let deleted = sqlx::query("DELETE FROM punishments WHERE id = ?")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(db_error)?
-            .rows_affected();
-        if deleted == 0 {
-            tx.rollback().await.map_err(db_error)?;
-            return Ok(DeletePunishmentByIdResponse::Status404_TheActivePunishmentWasNotFound);
-        }
-        sqlx::query(
-            "INSERT INTO unpunish (punish_id, reason, timestamp, operator) VALUES (?, ?, ?, ?)",
-        )
-        .bind(id)
-        .bind(&body.reason)
-        .bind(Utc::now().timestamp_millis())
-        .bind(actor_id.to_string())
-        .execute(&mut *tx)
-        .await
-        .map_err(db_error)?;
-        sqlx::query(
-            "INSERT INTO events (event_id, data, handled) VALUES ('removed_punishment', ?, 1)",
-        )
-        .bind(serde_json::json!({"punish_id": id}).to_string())
-        .execute(&mut *tx)
-        .await
-        .map_err(db_error)?;
-        tx.commit().await.map_err(db_error)?;
-        let punishment = self
-            .fetch_punishment(id)
-            .await?
-            .ok_or_else(|| "revoked punishment disappeared".to_string())?;
-        self.publish_stream_event(punishment_revoked_event(punishment))
-            .await;
-        Ok(DeletePunishmentByIdResponse::Status204_ThePunishmentWasRevokedSuccessfully)
-    }
-
-    async fn list_punishment_proofs(
-        &self,
-        _: &Method,
-        _: &Host,
-        _: &CookieJar,
-        key: &ApiKey,
-        path: &ListPunishmentProofsPathParams,
-    ) -> Result<ListPunishmentProofsResponse, String> {
-        if !can_read(key) {
-            return Ok(
-                ListPunishmentProofsResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
-            );
-        }
-        let Ok(id) = i64::try_from(path.punishment_id) else {
-            return Ok(ListPunishmentProofsResponse::Status404_ThePunishmentWasNotFound);
-        };
-        if !self.punishment_exists(id, false).await? {
-            return Ok(ListPunishmentProofsResponse::Status404_ThePunishmentWasNotFound);
-        }
-        Ok(
-            ListPunishmentProofsResponse::Status200_TheProofsWereRetrievedSuccessfully(
-                self.load_proofs(id).await?,
-            ),
-        )
-    }
-
-    async fn create_punishment_proof(
-        &self,
-        _: &Method,
-        _: &Host,
-        _: &CookieJar,
-        key: &ApiKey,
-        path: &CreatePunishmentProofPathParams,
-        body: &CreatePunishmentProofRequest,
-    ) -> Result<CreatePunishmentProofResponse, String> {
-        if write_actor(key).is_none() {
-            return Ok(CreatePunishmentProofResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
-        }
-        if !non_empty(&body.text) {
-            return Ok(CreatePunishmentProofResponse::Status400_TheRequestIsInvalid);
-        }
-        let Ok(id) = i64::try_from(path.punishment_id) else {
-            return Ok(CreatePunishmentProofResponse::Status404_TheActivePunishmentWasNotFound);
-        };
-        let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
-        if sqlx::query_scalar::<_, i64>("SELECT id FROM punishments WHERE id = ? FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(db_error)?
-            .is_none()
-        {
-            tx.rollback().await.map_err(db_error)?;
-            return Ok(CreatePunishmentProofResponse::Status404_TheActivePunishmentWasNotFound);
-        }
-        let result = sqlx::query("INSERT INTO proofs (punish_id, text, public) VALUES (?, ?, ?)")
-            .bind(id)
-            .bind(&body.text)
-            .bind(body.public)
-            .execute(&mut *tx)
-            .await
-            .map_err(db_error)?;
-        let proof_id = i64::try_from(result.last_insert_id())
-            .map_err(|_| "proof ID exceeds signed 64-bit range".to_string())?;
-        tx.commit().await.map_err(db_error)?;
-        let proof = self
-            .fetch_proof(id, proof_id)
-            .await?
-            .ok_or_else(|| "created proof disappeared".to_string())?;
-        self.publish_stream_event(punishment_proof_created_event(
-            path.punishment_id,
-            proof.clone(),
-        ))
-        .await;
-        Ok(CreatePunishmentProofResponse::Status201_TheProofWasCreatedSuccessfully(proof))
-    }
-
-    async fn get_punishment_proof_by_id(
-        &self,
-        _: &Method,
-        _: &Host,
-        _: &CookieJar,
-        key: &ApiKey,
-        path: &GetPunishmentProofByIdPathParams,
-    ) -> Result<GetPunishmentProofByIdResponse, String> {
-        if !can_read(key) {
-            return Ok(GetPunishmentProofByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
-        }
-        let (Ok(punishment_id), Ok(proof_id)) = (
-            i64::try_from(path.punishment_id),
-            i64::try_from(path.proof_id),
-        ) else {
-            return Ok(GetPunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound);
-        };
-        match self.fetch_proof(punishment_id, proof_id).await? {
-            Some(proof) => Ok(
-                GetPunishmentProofByIdResponse::Status200_TheProofWasRetrievedSuccessfully(proof),
-            ),
-            None => Ok(GetPunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound),
-        }
-    }
-
     async fn update_punishment_proof_by_id(
         &self,
         _: &Method,
@@ -924,47 +794,6 @@ impl Punishments<String> for Api {
         .await;
         Ok(UpdatePunishmentProofByIdResponse::Status200_TheProofWasUpdatedSuccessfully(proof))
     }
-
-    async fn delete_punishment_proof_by_id(
-        &self,
-        _: &Method,
-        _: &Host,
-        _: &CookieJar,
-        key: &ApiKey,
-        path: &DeletePunishmentProofByIdPathParams,
-    ) -> Result<DeletePunishmentProofByIdResponse, String> {
-        if write_actor(key).is_none() {
-            return Ok(DeletePunishmentProofByIdResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope);
-        }
-        let (Ok(punishment_id), Ok(proof_id)) = (
-            i64::try_from(path.punishment_id),
-            i64::try_from(path.proof_id),
-        ) else {
-            return Ok(
-                DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound,
-            );
-        };
-        let proof = self.fetch_proof(punishment_id, proof_id).await?;
-        let Some(proof) = proof else {
-            return Ok(
-                DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound,
-            );
-        };
-        let affected = sqlx::query("DELETE FROM proofs WHERE id = ? AND punish_id = ?")
-            .bind(proof_id)
-            .bind(punishment_id)
-            .execute(self.punishments_pool())
-            .await
-            .map_err(db_error)?
-            .rows_affected();
-        if affected == 0 {
-            Ok(DeletePunishmentProofByIdResponse::Status404_ThePunishmentOrProofWasNotFound)
-        } else {
-            self.publish_stream_event(punishment_proof_deleted_event(path.punishment_id, proof))
-                .await;
-            Ok(DeletePunishmentProofByIdResponse::Status204_TheProofWasDeletedSuccessfully)
-        }
-    }
 }
 
 fn db_error(error: sqlx::Error) -> String {
@@ -975,7 +804,7 @@ fn db_error(error: sqlx::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mojang::PlayerDbClient;
+    use crate::mojang::MojangProfileResolver;
     use headers::Header;
 
     fn test_host() -> Host {
@@ -984,43 +813,40 @@ mod tests {
     }
 
     #[test]
-    fn all_types_round_trip() {
-        for api in [
-            "ban",
-            "tempBan",
-            "ipBan",
-            "tempIpBan",
-            "mute",
-            "tempMute",
-            "ipMute",
-            "tempIpMute",
-            "warning",
-            "caution",
-            "kick",
-            "note",
+    fn all_api_types_map_to_database_values() {
+        for (api, database) in [
+            ("ban", "BAN"),
+            ("tempBan", "TEMP_BAN"),
+            ("ipBan", "IP_BAN"),
+            ("tempIpBan", "TEMP_IP_BAN"),
+            ("mute", "MUTE"),
+            ("tempMute", "TEMP_MUTE"),
+            ("ipMute", "IP_MUTE"),
+            ("tempIpMute", "TEMP_IP_MUTE"),
+            ("warning", "WARNING"),
+            ("caution", "CAUTION"),
+            ("kick", "KICK"),
+            ("note", "NOTE"),
         ] {
-            let kind = StoredPunishmentType::from_api(api).unwrap();
-            assert_eq!(StoredPunishmentType::from_db(kind.db()), Some(kind));
-            assert_eq!(kind.api(), api);
+            let kind = api.parse::<PunishmentType>().unwrap();
+            assert_eq!(punishment_type_database_value(kind), database);
+            assert_eq!(kind.to_string(), api);
         }
     }
 
     #[test]
     fn target_validation_matches_legacy_rules_and_normalizes_values() {
         assert_eq!(
-            normalize_target(
-                StoredPunishmentType::Ban,
-                "550E8400E29B41D4A716446655440000"
-            ),
+            normalize_target(PunishmentType::Ban, "550E8400E29B41D4A716446655440000"),
             Some("550e8400-e29b-41d4-a716-446655440000".to_string())
         );
-        assert_eq!(normalize_target(StoredPunishmentType::Ban, "1.1.1.1"), None);
+        assert_eq!(normalize_target(PunishmentType::Ban, "1.1.1.1"), None);
         assert_eq!(
-            normalize_target(StoredPunishmentType::IpBan, "1.1.1.1"),
+            normalize_target(PunishmentType::IpBan, "1.1.1.1"),
             Some("1.1.1.1".to_string())
         );
         assert_eq!(
-            normalize_target(StoredPunishmentType::IpBan, "2001:4860:4860:0:0:0:0:8888"),
+            normalize_target(PunishmentType::IpBan, "2001:4860:4860:0:0:0:0:8888"),
             Some("2001:4860:4860::8888".to_string())
         );
         for ip in [
@@ -1042,21 +868,21 @@ mod tests {
     fn expiry_rules_and_seen_flag_are_strict() {
         let now = Utc::now();
         assert_eq!(
-            end_millis(StoredPunishmentType::Ban, &Nullable::Null, now),
+            end_millis(PunishmentType::Ban, &Nullable::Null, now),
             Some(-1)
         );
         assert!(
             end_millis(
-                StoredPunishmentType::TempBan,
+                PunishmentType::TempBan,
                 &Nullable::Present(now + chrono::Duration::seconds(1)),
                 now
             )
             .is_some()
         );
-        assert!(end_millis(StoredPunishmentType::TempBan, &Nullable::Null, now).is_none());
+        assert!(end_millis(PunishmentType::TempBan, &Nullable::Null, now).is_none());
         assert!(
             end_millis(
-                StoredPunishmentType::Ban,
+                PunishmentType::Ban,
                 &Nullable::Present(now + chrono::Duration::seconds(1)),
                 now
             )
@@ -1064,7 +890,6 @@ mod tests {
         );
         assert_eq!(with_seen("OTHER", true), "OTHER,SEEN");
         assert_eq!(with_seen("OTHER,SEEN", false), "OTHER");
-        assert!(seen("OTHER,SEEN"));
     }
 
     async fn cleanup_targets(pool: &sqlx::MySqlPool, targets: &[String]) {
@@ -1122,7 +947,7 @@ mod tests {
             pool.clone(),
             pool.clone(),
             None,
-            PlayerDbClient::new().unwrap(),
+            MojangProfileResolver::new().unwrap(),
         );
         let actor_id = Uuid::new_v4();
         let key = ApiKey::new(

@@ -1,8 +1,9 @@
+use crate::api::Api;
+use crate::api::filters::is_valid_half_open_range;
+use crate::api::pagination::Cursor;
 use crate::api::stream::{crawl_created_event, crawl_deleted_event};
-use crate::api::{Api, from_nullable, into_nullable};
-use crate::auth::scope::ApiKeyScopeExt;
-use crate::filters::is_valid_half_open_range;
-use crate::pagination::Cursor;
+use crate::auth::ApiKeyScopeChecker;
+use crate::records::CrawlRecord;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Utc};
@@ -16,46 +17,13 @@ use graph_api::models::{
 use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{FromRow, MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder};
 use uuid::Uuid;
 
 const DEFAULT_CRAWLS_LIMIT: u8 = 20;
 const MAX_CRAWLS_LIMIT: u8 = 100;
 
 type CrawlCursor = Cursor<DateTime<Utc>, Uuid>;
-
-#[derive(Debug, FromRow)]
-struct CrawlRecord {
-    id: Uuid,
-    address: String,
-    port: u16,
-    ping: u32,
-    version: String,
-    protocol_version: i32,
-    max_players: u32,
-    online_players: u32,
-    description: Option<String>,
-    favicon: Option<String>,
-    crawled_at: DateTime<Utc>,
-}
-
-impl CrawlRecord {
-    fn into_list_item(self) -> Crawl {
-        Crawl {
-            id: self.id,
-            address: self.address,
-            port: self.port,
-            ping: self.ping,
-            version: self.version,
-            protocol_version: self.protocol_version,
-            max_players: self.max_players,
-            online_players: self.online_players,
-            description: self.description,
-            favicon: into_nullable(self.favicon),
-            crawled_at: self.crawled_at,
-        }
-    }
-}
 
 #[async_trait]
 impl Crawls<String> for Api {
@@ -81,7 +49,10 @@ impl Crawls<String> for Api {
         }
 
         let id = Uuid::new_v4();
-        let favicon = from_nullable(&body.favicon);
+        let favicon = match &body.favicon {
+            Nullable::Present(favicon) => Some(favicon),
+            Nullable::Null => None,
+        };
         sqlx::query(
             r#"
             INSERT INTO crawls
@@ -101,7 +72,7 @@ impl Crawls<String> for Api {
         .bind(&body.description)
         .bind(favicon)
         .bind(body.crawled_at)
-        .execute(&self.pool)
+        .execute(&self.default_pool)
         .await
         .map_err(log_database_error)?;
 
@@ -148,7 +119,7 @@ impl Crawls<String> for Api {
             "#,
         )
         .bind(path_params.crawl_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.default_pool)
         .await
         .map_err(log_database_error)?;
         let Some(crawl) = crawl else {
@@ -157,7 +128,7 @@ impl Crawls<String> for Api {
 
         let result = sqlx::query("DELETE FROM crawls WHERE id = ?")
             .bind(path_params.crawl_id)
-            .execute(&self.pool)
+            .execute(&self.default_pool)
             .await
             .map_err(log_database_error)?;
 
@@ -165,7 +136,7 @@ impl Crawls<String> for Api {
             return Ok(DeleteCrawlByIdResponse::Status404_TheCrawlWasNotFound);
         }
 
-        self.publish_stream_event(crawl_deleted_event(crawl.into_list_item()))
+        self.publish_stream_event(crawl_deleted_event(crawl.into()))
             .await;
 
         Ok(DeleteCrawlByIdResponse::Status204_TheCrawlWasDeletedSuccessfully)
@@ -192,7 +163,7 @@ impl Crawls<String> for Api {
             "#,
         )
         .bind(path_params.crawl_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.default_pool)
         .await
         .map_err(log_database_error)?;
 
@@ -200,11 +171,7 @@ impl Crawls<String> for Api {
             return Ok(GetCrawlByIdResponse::Status404_TheCrawlWasNotFound);
         };
 
-        Ok(
-            GetCrawlByIdResponse::Status200_TheCrawlWasRetrievedSuccessfully(
-                record.into_list_item(),
-            ),
-        )
+        Ok(GetCrawlByIdResponse::Status200_TheCrawlWasRetrievedSuccessfully(record.into()))
     }
 
     async fn list_crawls(
@@ -285,7 +252,7 @@ impl Crawls<String> for Api {
 
         let mut rows = query
             .build_query_as::<CrawlRecord>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
 
@@ -307,11 +274,14 @@ impl Crawls<String> for Api {
             None
         };
 
-        let items = rows.into_iter().map(CrawlRecord::into_list_item).collect();
+        let items = rows.into_iter().map(Crawl::from).collect();
 
         Ok(
             ListCrawlsResponse::Status200_TheCrawlsWereRetrievedSuccessfully(
-                ListCrawls200Response::new(items, into_nullable(next_cursor)),
+                ListCrawls200Response::new(
+                    items,
+                    next_cursor.map_or(Nullable::Null, Nullable::Present),
+                ),
             ),
         )
     }

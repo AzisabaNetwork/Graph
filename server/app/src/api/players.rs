@@ -1,15 +1,15 @@
+use crate::api::Api;
+use crate::api::filters::matches_half_open_range;
+use crate::api::pagination::Cursor;
 use crate::api::stream::{
     friend_added_event, friend_removed_event, friend_request_accepted_event,
     friend_request_added_event, friend_request_rejected_event, friend_request_removed_event,
 };
-use crate::api::{Api, from_nullable, into_nullable};
-use crate::auth::scope::ApiKeyScopeExt;
-use crate::filters::matches_half_open_range;
-use crate::mojang::PlayerDbError;
-use crate::pagination::Cursor;
+use crate::auth::ApiKeyScopeChecker;
+use crate::mojang::MojangProfileResolverError;
+use crate::records::PlayerRecord;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
-use chrono::{DateTime, Utc};
 use graph_api::apis::players::{
     AcceptPlayerFriendRequestResponse, AddPlayerFriendRequestResponse, AddPlayerFriendResponse,
     GetPlayerByIdResponse, ListPlayerFriendRequestsResponse, ListPlayerFriendsResponse,
@@ -25,9 +25,10 @@ use graph_api::models::{
     RemovePlayerFriendPathParams, RemovePlayerFriendRequestPathParams, UpdatePlayerByIdPathParams,
     UpdatePlayerByIdRequest,
 };
+use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{FromRow, MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder};
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinSet;
 use uuid::Uuid;
@@ -42,61 +43,7 @@ struct FriendRequestPlayers {
     sender: Player,
 }
 
-#[derive(Debug, FromRow)]
-struct PlayerRecord {
-    id: Uuid,
-    discord_id: Option<String>,
-    status: String,
-    current_server: Option<String>,
-    current_locale: Option<String>,
-    current_client_version: Option<String>,
-    bio: Option<String>,
-    first_login_at: Option<DateTime<Utc>>,
-    last_seen_at: Option<DateTime<Utc>>,
-}
-
 impl PlayerRecord {
-    fn empty(id: Uuid) -> Self {
-        Self {
-            id,
-            discord_id: None,
-            status: PlayerStatus::Offline.to_string(),
-            current_server: None,
-            current_locale: None,
-            current_client_version: None,
-            bio: None,
-            first_login_at: None,
-            last_seen_at: None,
-        }
-    }
-
-    fn into_list_item(self, username: String, include_details: bool) -> Player {
-        let PlayerRecord {
-            id,
-            discord_id,
-            status,
-            current_server,
-            current_locale,
-            current_client_version,
-            bio,
-            first_login_at,
-            last_seen_at,
-        } = self;
-
-        Player::new(
-            id,
-            into_nullable(include_details.then_some(discord_id).flatten()),
-            username,
-            into_nullable(bio),
-            status,
-            into_nullable(current_server),
-            into_nullable(current_locale),
-            into_nullable(current_client_version),
-            into_nullable(first_login_at),
-            into_nullable(last_seen_at),
-        )
-    }
-
     fn matches_filters(
         &self,
         discord_id: Option<&str>,
@@ -143,20 +90,18 @@ impl Api {
             "#,
         )
         .bind(id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.default_pool)
         .await
         .map_err(log_database_error)?
         .unwrap_or_else(|| PlayerRecord::empty(id)))
     }
 
     async fn load_player(&self, id: Uuid, include_details: bool) -> Result<Option<Player>, String> {
-        let Some(profile) = self.player_db.find_by_uuid(id).await? else {
+        let Some(profile) = self.mojang_profile_resolver.find_by_uuid(id).await? else {
             return Ok(None);
         };
         let record = self.load_player_record(id).await?;
-        Ok(Some(
-            record.into_list_item(profile.username, include_details),
-        ))
+        Ok(Some(record.into_player(profile.username, include_details)))
     }
 
     async fn load_players(
@@ -181,7 +126,7 @@ impl Api {
 
         let records = query
             .build_query_as::<PlayerRecord>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
         let mut records = records
@@ -191,13 +136,13 @@ impl Api {
 
         let mut tasks = JoinSet::new();
         for (index, id) in ids.iter().copied().enumerate() {
-            let player_db = self.player_db.clone();
+            let mojang_profile_resolver = self.mojang_profile_resolver.clone();
             let record = records
                 .remove(&id)
                 .unwrap_or_else(|| PlayerRecord::empty(id));
             tasks.spawn(async move {
-                let profile = player_db.find_by_uuid(id).await?;
-                Ok::<_, PlayerDbError>((index, record, profile))
+                let profile = mojang_profile_resolver.find_by_uuid(id).await?;
+                Ok::<_, MojangProfileResolverError>((index, record, profile))
             });
         }
 
@@ -212,7 +157,7 @@ impl Api {
                     error.to_string()
                 })?;
             if let Some(profile) = profile {
-                items[index] = Some(record.into_list_item(profile.username, include_details));
+                items[index] = Some(record.into_player(profile.username, include_details));
             }
         }
 
@@ -221,8 +166,8 @@ impl Api {
 
     async fn players_exist(&self, first: Uuid, second: Uuid) -> Result<bool, String> {
         let (first, second) = tokio::try_join!(
-            self.player_db.find_by_uuid(first),
-            self.player_db.find_by_uuid(second),
+            self.mojang_profile_resolver.find_by_uuid(first),
+            self.mojang_profile_resolver.find_by_uuid(second),
         )?;
         Ok(first.is_some() && second.is_some())
     }
@@ -276,7 +221,7 @@ impl Players<String> for Api {
             return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
         };
 
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
         let request =
             sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
                 .bind(path_params.player_id)
@@ -358,7 +303,7 @@ impl Players<String> for Api {
         let (player1_id, player2_id) =
             normalize_friendship(path_params.player_id, path_params.friend_id);
 
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
         match sqlx::query(
             r#"
             INSERT INTO friendships (player1_id, player2_id)
@@ -455,7 +400,7 @@ impl Players<String> for Api {
         )
         .bind(player1_id)
         .bind(player2_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&self.default_pool)
         .await
         .map_err(log_database_error)?;
         if already_friends {
@@ -473,7 +418,7 @@ impl Players<String> for Api {
         )
         .bind(path_params.player_id)
         .bind(path_params.sender_id)
-        .execute(&self.pool)
+        .execute(&self.default_pool)
         .await
         .map_err(log_database_error)?;
 
@@ -524,7 +469,7 @@ impl Players<String> for Api {
             );
         }
         if self
-            .player_db
+            .mojang_profile_resolver
             .find_by_uuid(path_params.player_id)
             .await?
             .is_none()
@@ -559,7 +504,7 @@ impl Players<String> for Api {
 
         let mut ids = query
             .build_query_scalar::<Uuid>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
         let next_cursor = take_next_cursor(&mut ids, limit)?;
@@ -568,7 +513,10 @@ impl Players<String> for Api {
             .await?;
 
         Ok(ListPlayerFriendRequestsResponse::Status200_ThePlayer(
-            ListPlayers200Response::new(items, into_nullable(next_cursor)),
+            ListPlayers200Response::new(
+                items,
+                next_cursor.map_or(Nullable::Null, Nullable::Present),
+            ),
         ))
     }
 
@@ -587,7 +535,7 @@ impl Players<String> for Api {
             );
         }
         if self
-            .player_db
+            .mojang_profile_resolver
             .find_by_uuid(path_params.player_id)
             .await?
             .is_none()
@@ -640,7 +588,7 @@ impl Players<String> for Api {
 
         let mut ids = query
             .build_query_scalar::<Uuid>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
         let next_cursor = take_next_cursor(&mut ids, limit)?;
@@ -649,7 +597,10 @@ impl Players<String> for Api {
             .await?;
 
         Ok(ListPlayerFriendsResponse::Status200_ThePlayer(
-            ListPlayers200Response::new(items, into_nullable(next_cursor)),
+            ListPlayers200Response::new(
+                items,
+                next_cursor.map_or(Nullable::Null, Nullable::Present),
+            ),
         ))
     }
 
@@ -697,12 +648,16 @@ impl Players<String> for Api {
             None => None,
         };
         if let Some(username) = query_params.username.as_deref() {
-            let profile = match self.player_db.find_by_username(username).await? {
+            let profile = match self
+                .mojang_profile_resolver
+                .find_by_username(username)
+                .await?
+            {
                 Some(profile) => profile,
                 None => {
                     return Ok(
                         ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
-                            ListPlayers200Response::new(Vec::new(), into_nullable(None)),
+                            ListPlayers200Response::new(Vec::new(), Nullable::Null),
                         ),
                     );
                 }
@@ -716,11 +671,11 @@ impl Players<String> for Api {
             ) {
                 Vec::new()
             } else {
-                vec![record.into_list_item(profile.username, can_read_discord_id)]
+                vec![record.into_player(profile.username, can_read_discord_id)]
             };
             return Ok(
                 ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
-                    ListPlayers200Response::new(items, into_nullable(None)),
+                    ListPlayers200Response::new(items, Nullable::Null),
                 ),
             );
         }
@@ -778,7 +733,7 @@ impl Players<String> for Api {
 
         let mut rows = query
             .build_query_as::<PlayerRecord>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
 
@@ -805,7 +760,10 @@ impl Players<String> for Api {
 
         Ok(
             ListPlayersResponse::Status200_ThePlayersWereRetrievedSuccessfully(
-                ListPlayers200Response::new(items, into_nullable(next_cursor)),
+                ListPlayers200Response::new(
+                    items,
+                    next_cursor.map_or(Nullable::Null, Nullable::Present),
+                ),
             ),
         )
     }
@@ -834,7 +792,7 @@ impl Players<String> for Api {
             sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
                 .bind(path_params.player_id)
                 .bind(path_params.sender_id)
-                .execute(&self.pool)
+                .execute(&self.default_pool)
                 .await
                 .map_err(log_database_error)?;
         if request.rows_affected() == 0 {
@@ -885,7 +843,7 @@ impl Players<String> for Api {
         )
         .bind(player1_id)
         .bind(player2_id)
-        .execute(&self.pool)
+        .execute(&self.default_pool)
         .await
         .map_err(log_database_error)?;
 
@@ -923,7 +881,7 @@ impl Players<String> for Api {
             sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
                 .bind(path_params.player_id)
                 .bind(path_params.sender_id)
-                .execute(&self.pool)
+                .execute(&self.default_pool)
                 .await
                 .map_err(log_database_error)?;
         if request.rows_affected() > 0 {
@@ -979,11 +937,15 @@ impl Players<String> for Api {
             return Ok(UpdatePlayerByIdResponse::Status400_TheRequestIsInvalid);
         }
 
-        let Some(profile) = self.player_db.find_by_uuid(path_params.player_id).await? else {
+        let Some(profile) = self
+            .mojang_profile_resolver
+            .find_by_uuid(path_params.player_id)
+            .await?
+        else {
             return Ok(UpdatePlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
         sqlx::query("INSERT IGNORE INTO players (id) VALUES (?)")
             .bind(path_params.player_id)
             .execute(&mut *transaction)
@@ -995,12 +957,16 @@ impl Players<String> for Api {
         if let Some(discord_id) = &body.discord_id {
             updates
                 .push("discord_id = ")
-                .push_bind_unseparated(from_nullable(discord_id));
+                .push_bind_unseparated(match discord_id {
+                    Nullable::Present(discord_id) => Some(discord_id),
+                    Nullable::Null => None,
+                });
         }
         if let Some(bio) = &body.bio {
-            updates
-                .push("bio = ")
-                .push_bind_unseparated(from_nullable(bio));
+            updates.push("bio = ").push_bind_unseparated(match bio {
+                Nullable::Present(bio) => Some(bio),
+                Nullable::Null => None,
+            });
         }
         if let Some(status) = status {
             updates.push("status = ").push_bind_unseparated(status);
@@ -1008,27 +974,42 @@ impl Players<String> for Api {
         if let Some(current_server) = &body.current_server {
             updates
                 .push("current_server = ")
-                .push_bind_unseparated(from_nullable(current_server));
+                .push_bind_unseparated(match current_server {
+                    Nullable::Present(current_server) => Some(current_server),
+                    Nullable::Null => None,
+                });
         }
         if let Some(current_locale) = &body.current_locale {
             updates
                 .push("current_locale = ")
-                .push_bind_unseparated(from_nullable(current_locale));
+                .push_bind_unseparated(match current_locale {
+                    Nullable::Present(current_locale) => Some(current_locale),
+                    Nullable::Null => None,
+                });
         }
         if let Some(current_client_version) = &body.current_client_version {
             updates
                 .push("current_client_version = ")
-                .push_bind_unseparated(from_nullable(current_client_version));
+                .push_bind_unseparated(match current_client_version {
+                    Nullable::Present(current_client_version) => Some(current_client_version),
+                    Nullable::Null => None,
+                });
         }
         if let Some(first_login_at) = &body.first_login_at {
             updates
                 .push("first_login_at = ")
-                .push_bind_unseparated(from_nullable(first_login_at));
+                .push_bind_unseparated(match first_login_at {
+                    Nullable::Present(first_login_at) => Some(first_login_at),
+                    Nullable::Null => None,
+                });
         }
         if let Some(last_seen_at) = &body.last_seen_at {
             updates
                 .push("last_seen_at = ")
-                .push_bind_unseparated(from_nullable(last_seen_at));
+                .push_bind_unseparated(match last_seen_at {
+                    Nullable::Present(last_seen_at) => Some(last_seen_at),
+                    Nullable::Null => None,
+                });
         }
         query.push(" WHERE id = ").push_bind(path_params.player_id);
 
@@ -1054,15 +1035,17 @@ impl Players<String> for Api {
 
         Ok(
             UpdatePlayerByIdResponse::Status200_ThePlayerWasUpdatedSuccessfully(
-                record.into_list_item(profile.username, can_read_discord_id(api_key)),
+                record.into_player(profile.username, can_read_discord_id(api_key)),
             ),
         )
     }
 }
 
 fn can_read_players(api_key: &ApiKey) -> bool {
-    api_key.has_scope(&ApiKeyScope::PlayersColonRead)
-        || api_key.has_scope(&ApiKeyScope::PlayersColonReadDetails)
+    api_key.has_any_scope(&[
+        ApiKeyScope::PlayersColonRead,
+        ApiKeyScope::PlayersColonReadDetails,
+    ])
 }
 
 fn can_read_discord_id(api_key: &ApiKey) -> bool {
@@ -1113,7 +1096,7 @@ mod tests {
 
     #[test]
     fn player_conversion_hides_discord_id_without_details_scope() {
-        let player = player_record().into_list_item("Steve".to_string(), false);
+        let player = player_record().into_player("Steve".to_string(), false);
 
         assert_eq!(player.discord_id, Nullable::Null);
         assert_eq!(
@@ -1124,7 +1107,7 @@ mod tests {
 
     #[test]
     fn player_conversion_includes_discord_id_with_details_scope() {
-        let player = player_record().into_list_item("Steve".to_string(), true);
+        let player = player_record().into_player("Steve".to_string(), true);
 
         assert_eq!(
             player.discord_id,
@@ -1135,7 +1118,7 @@ mod tests {
     #[test]
     fn empty_player_record_uses_public_defaults() {
         let id = Uuid::new_v4();
-        let player = PlayerRecord::empty(id).into_list_item("Steve".to_string(), true);
+        let player = PlayerRecord::empty(id).into_player("Steve".to_string(), true);
 
         assert_eq!(player.id, id);
         assert_eq!(player.username, "Steve");
@@ -1181,7 +1164,7 @@ mod tests {
 
     #[test]
     fn database_fields_map_to_current_player_state() {
-        let player = player_record().into_list_item("Steve".to_string(), true);
+        let player = player_record().into_player("Steve".to_string(), true);
 
         assert_eq!(player.status, PlayerStatus::Online.to_string());
         assert_eq!(

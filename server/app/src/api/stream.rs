@@ -1,5 +1,5 @@
 use crate::api::Api;
-use crate::auth::scope::ApiKeyScopeExt;
+use crate::auth::ApiKeyScopeChecker;
 use async_trait::async_trait;
 use axum::response::sse::Event;
 use axum_extra::extract::CookieJar;

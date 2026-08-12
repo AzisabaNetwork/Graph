@@ -1,8 +1,9 @@
+use crate::api::Api;
+use crate::api::filters::is_valid_half_open_range;
+use crate::api::pagination::Cursor;
 use crate::api::stream::{patch_note_created_event, patch_note_deleted_event};
-use crate::api::{Api, into_nullable};
-use crate::auth::scope::ApiKeyScopeExt;
-use crate::filters::is_valid_half_open_range;
-use crate::pagination::Cursor;
+use crate::auth::ApiKeyScopeChecker;
+use crate::records::PatchNoteRecord;
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 use axum::extract::Multipart;
@@ -21,7 +22,7 @@ use graph_api::models::{
 use graph_api::types::{ByteArray, Nullable};
 use headers::Host;
 use http::Method;
-use sqlx::{FromRow, MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder};
 use std::{collections::HashMap, str::FromStr};
 use uuid::Uuid;
 
@@ -29,42 +30,6 @@ const DEFAULT_PATCH_NOTES_LIMIT: u8 = 20;
 const MAX_PATCH_NOTES_LIMIT: u8 = 100;
 
 type PatchNoteCursor = Cursor<DateTime<Utc>, Uuid>;
-
-#[derive(Debug, FromRow)]
-struct PatchNoteRecord {
-    id: Uuid,
-    target: String,
-    category: String,
-    title: String,
-    body: String,
-    author_id: Option<Uuid>,
-    created_at: DateTime<Utc>,
-}
-
-impl PatchNoteRecord {
-    fn into_list_item(self, image_urls: Vec<String>) -> PatchNote {
-        let PatchNoteRecord {
-            id,
-            target,
-            category,
-            title,
-            body,
-            author_id,
-            created_at,
-        } = self;
-
-        PatchNote::new(
-            id,
-            target,
-            category,
-            title,
-            body,
-            into_nullable(author_id),
-            image_urls,
-            created_at,
-        )
-    }
-}
 
 #[async_trait]
 impl PatchNotes<String> for Api {
@@ -119,7 +84,7 @@ impl PatchNotes<String> for Api {
                     "patch-notes/{id}/{position:04}-{image_id}{}",
                     image_extension(&content_type)
                 );
-                let url = storage.public_url(&object_key);
+                let url = storage.build_public_url(&object_key);
 
                 storage
                     .client
@@ -144,7 +109,7 @@ impl PatchNotes<String> for Api {
             .map(|(url, _, _)| url.clone())
             .collect::<Vec<_>>();
 
-        let mut transaction = self.pool.begin().await.map_err(|error| {
+        let mut transaction = self.default_pool.begin().await.map_err(|error| {
             tracing::error!(?error, "failed to begin transaction");
             error.to_string()
         })?;
@@ -203,7 +168,7 @@ impl PatchNotes<String> for Api {
             category,
             title,
             body,
-            into_nullable(author_id),
+            author_id.map_or(Nullable::Null, Nullable::Present),
             image_urls,
             created_at,
         );
@@ -235,7 +200,7 @@ impl PatchNotes<String> for Api {
             "#,
         )
         .bind(path_params.patch_note_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.default_pool)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to load patch note before deletion");
@@ -245,7 +210,7 @@ impl PatchNotes<String> for Api {
             return Ok(DeletePatchNoteByIdResponse::Status404_ThePatchNoteWasNotFound);
         };
         let image_urls = self.load_patch_note_image_urls(&[record.id]).await?;
-        let patch_note = record.into_list_item(
+        let patch_note = record.into_patch_note(
             image_urls
                 .get(&path_params.patch_note_id)
                 .cloned()
@@ -256,7 +221,7 @@ impl PatchNotes<String> for Api {
             "SELECT object_key FROM patch_note_images WHERE patch_note_id = ? ORDER BY position",
         )
         .bind(path_params.patch_note_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.default_pool)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to load patch note image object keys");
@@ -294,7 +259,7 @@ impl PatchNotes<String> for Api {
 
         let result = sqlx::query("DELETE FROM patch_notes WHERE id = ?")
             .bind(path_params.patch_note_id)
-            .execute(&self.pool)
+            .execute(&self.default_pool)
             .await
             .map_err(|error| {
                 tracing::error!(?error, "failed to delete patch note");
@@ -333,7 +298,7 @@ impl PatchNotes<String> for Api {
             "#,
         )
         .bind(path_params.patch_note_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.default_pool)
         .await
         .map_err(|error| {
             tracing::error!(?error, "failed to get patch note");
@@ -348,7 +313,7 @@ impl PatchNotes<String> for Api {
 
         Ok(
             GetPatchNoteByIdResponse::Status200_ThePatchNoteWasRetrievedSuccessfully(
-                record.into_list_item(image_urls),
+                record.into_patch_note(image_urls),
             ),
         )
     }
@@ -448,7 +413,7 @@ impl PatchNotes<String> for Api {
 
         let mut rows = query
             .build_query_as::<PatchNoteRecord>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(|error| {
                 tracing::error!(?error, "failed to list patch notes");
@@ -479,7 +444,7 @@ impl PatchNotes<String> for Api {
             .into_iter()
             .map(|record| {
                 let record_image_urls = image_urls.get(&record.id).cloned().unwrap_or_default();
-                record.into_list_item(record_image_urls)
+                record.into_patch_note(record_image_urls)
             })
             .collect::<Vec<_>>();
 
@@ -515,7 +480,7 @@ impl Api {
 
         let rows = query
             .build_query_as::<(Uuid, String)>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(|error| {
                 tracing::error!(?error, "failed to load patch note image URLs");

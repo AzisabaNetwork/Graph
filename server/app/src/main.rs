@@ -1,12 +1,12 @@
 mod api;
 mod auth;
-mod filters;
 mod mojang;
-mod pagination;
+mod object_storage;
+mod records;
 
-use crate::api::non_empty_env;
-use api::{Api, ObjectStorage};
-use mojang::PlayerDbClient;
+use crate::object_storage::ObjectStorage;
+use api::Api;
+use mojang::MojangProfileResolver;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
@@ -55,7 +55,7 @@ async fn main() {
         pool,
         punishments_pool,
         ObjectStorage::from_env().await,
-        PlayerDbClient::new().expect("failed to create PlayerDB client"),
+        MojangProfileResolver::new().expect("failed to create PlayerDB client"),
         redis_client,
         redis,
     );
@@ -82,6 +82,10 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .expect("graph-server failed");
+}
+
+pub(crate) fn non_empty_env(key: &str) -> Option<String> {
+    env::var(key).ok().filter(|value| !value.trim().is_empty())
 }
 
 async fn validate_punishments_database(pool: &MySqlPool) -> Result<(), sqlx::Error> {

@@ -1,8 +1,8 @@
-use crate::api::{Api, into_nullable};
-use crate::auth::credentials::ApiKeyCredentials;
-use crate::auth::scope::ApiKeyScopeExt;
-use crate::filters::is_valid_half_open_range;
-use crate::pagination::Cursor;
+use crate::api::Api;
+use crate::api::filters::is_valid_half_open_range;
+use crate::api::pagination::Cursor;
+use crate::auth::{ApiKeyCredentials, ApiKeyScopeChecker};
+use crate::records::ApiKeyRecord;
 use async_trait::async_trait;
 use axum_extra::extract::CookieJar;
 use chrono::{DateTime, Utc};
@@ -15,47 +15,16 @@ use graph_api::models::{
     GetApiKeyByIdPathParams, ListApiKeys200Response, ListApiKeysQueryParams,
     UpdateApiKeyByIdPathParams, UpdateApiKeyByIdRequest,
 };
+use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{FromRow, MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 
 const DEFAULT_API_KEYS_LIMIT: u8 = 20;
 const MAX_API_KEYS_LIMIT: u8 = 100;
 
 type ApiKeyCursor = Cursor<DateTime<Utc>, String>;
-
-#[derive(Debug, FromRow)]
-struct ApiKeyRecord {
-    public_id: String,
-    name: String,
-    created_at: DateTime<Utc>,
-    expires_at: Option<DateTime<Utc>>,
-    player_id: Option<uuid::Uuid>,
-}
-
-impl ApiKeyRecord {
-    fn into_list_item(self, scopes: &BTreeMap<String, Vec<String>>) -> ApiKey {
-        let ApiKeyRecord {
-            public_id,
-            name,
-            created_at,
-            expires_at,
-            player_id,
-        } = self;
-
-        let item_scopes = scopes.get(&public_id).cloned().unwrap_or_default();
-
-        ApiKey::new(
-            name,
-            public_id,
-            into_nullable(player_id),
-            item_scopes,
-            created_at,
-            into_nullable(expires_at),
-        )
-    }
-}
 
 #[async_trait]
 impl ApiKeys<String> for Api {
@@ -119,13 +88,13 @@ impl ApiKeys<String> for Api {
         })?;
         let secret_digest = credentials.secret_digest();
         let public_id = credentials.public_id().to_owned();
-        let token = credentials.to_token();
+        let token = credentials.expose();
         let scopes = requested_scopes
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
 
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
         sqlx::query(
             r#"
             INSERT INTO api_keys
@@ -168,10 +137,10 @@ impl ApiKeys<String> for Api {
                 CreateApiKey201Response::new(
                     body.name.clone(),
                     public_id,
-                    into_nullable(player_id),
+                    player_id.map_or(Nullable::Null, Nullable::Present),
                     scopes,
                     created_at,
-                    into_nullable(expires_at),
+                    expires_at.map_or(Nullable::Null, Nullable::Present),
                     token,
                 ),
             ),
@@ -221,14 +190,14 @@ impl ApiKeys<String> for Api {
 
         let record = sqlx::query_as::<_, ApiKeyRecord>(
             r#"
-            SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id
+            SELECT k.public_id, k.name, k.secret_digest, k.created_at, k.expires_at, p.player_id
             FROM api_keys k
             LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id
             WHERE k.public_id = ?
             "#,
         )
         .bind(&path_params.api_key_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&self.default_pool)
         .await
         .map_err(log_database_error)?;
 
@@ -241,7 +210,12 @@ impl ApiKeys<String> for Api {
 
         Ok(
             GetApiKeyByIdResponse::Status200_TheAPIKeyWasRetrievedSuccessfully(
-                record.into_list_item(&scopes),
+                record.into_api_key(
+                    scopes
+                        .get(&path_params.api_key_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                ),
             ),
         )
     }
@@ -283,7 +257,7 @@ impl ApiKeys<String> for Api {
         };
 
         let mut query = QueryBuilder::<MySql>::new(
-            "SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id FROM api_keys k LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id WHERE 1 = 1",
+            "SELECT k.public_id, k.name, k.secret_digest, k.created_at, k.expires_at, p.player_id FROM api_keys k LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id WHERE 1 = 1",
         );
         if let Some(player_id) = query_params.player_id {
             query.push(" AND p.player_id = ").push_bind(player_id);
@@ -316,7 +290,7 @@ impl ApiKeys<String> for Api {
 
         let mut rows = query
             .build_query_as::<ApiKeyRecord>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
 
@@ -345,12 +319,18 @@ impl ApiKeys<String> for Api {
         let scopes = self.load_api_key_scopes(&public_ids).await?;
         let items = rows
             .into_iter()
-            .map(|record| record.into_list_item(&scopes))
+            .map(|record| {
+                let record_scopes = scopes.get(&record.public_id).cloned().unwrap_or_default();
+                record.into_api_key(record_scopes)
+            })
             .collect();
 
         Ok(
             ListApiKeysResponse::Status200_TheAPIKeysWereRetrievedSuccessfully(
-                ListApiKeys200Response::new(items, into_nullable(next_cursor)),
+                ListApiKeys200Response::new(
+                    items,
+                    next_cursor.map_or(Nullable::Null, Nullable::Present),
+                ),
             ),
         )
     }
@@ -405,7 +385,7 @@ impl ApiKeys<String> for Api {
             None => None,
         };
 
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
 
         let exists = sqlx::query_scalar::<_, String>(
             "SELECT public_id FROM api_keys WHERE public_id = ? FOR UPDATE",
@@ -479,14 +459,14 @@ impl ApiKeys<String> for Api {
 
         let record = sqlx::query_as::<_, ApiKeyRecord>(
             r#"
-            SELECT k.public_id, k.name, k.created_at, k.expires_at, p.player_id
+            SELECT k.public_id, k.name, k.secret_digest, k.created_at, k.expires_at, p.player_id
             FROM api_keys k
             LEFT JOIN api_key_players p ON p.api_key_public_id = k.public_id
             WHERE k.public_id = ?
             "#,
         )
         .bind(&path_params.api_key_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&self.default_pool)
         .await
         .map_err(log_database_error)?;
 
@@ -496,7 +476,12 @@ impl ApiKeys<String> for Api {
 
         Ok(
             UpdateApiKeyByIdResponse::Status200_TheAPIKeyWasUpdatedSuccessfully(
-                record.into_list_item(&scopes),
+                record.into_api_key(
+                    scopes
+                        .get(&path_params.api_key_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                ),
             ),
         )
     }
@@ -509,7 +494,7 @@ impl Api {
             .map_err(|error| format!("GRAPH_BOOTSTRAP_API_KEY is invalid: {error}"))?;
         let secret_digest = credentials.secret_digest();
 
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
         sqlx::query(
             r#"
             INSERT INTO api_keys
@@ -550,7 +535,7 @@ impl Api {
     }
 
     async fn delete_api_key_tree(&self, root_public_id: &str) -> Result<bool, String> {
-        let mut transaction = self.pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
         let root = sqlx::query_scalar::<_, String>(
             "SELECT public_id FROM api_keys WHERE public_id = ? FOR UPDATE",
         )
@@ -620,7 +605,7 @@ impl Api {
 
         let rows = query
             .build_query_as::<(String, String)>()
-            .fetch_all(&self.pool)
+            .fetch_all(&self.default_pool)
             .await
             .map_err(log_database_error)?;
         let mut scopes = BTreeMap::<String, Vec<String>>::new();
@@ -671,7 +656,7 @@ fn log_database_error(error: sqlx::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mojang::PlayerDbClient;
+    use crate::mojang::MojangProfileResolver;
     use graph_api::types::Nullable;
     use headers::Header;
 
@@ -684,7 +669,7 @@ mod tests {
         ApiKey::new(
             "test".to_string(),
             "test".to_string(),
-            into_nullable(player_id),
+            player_id.map_or(Nullable::Null, Nullable::Present),
             scopes.iter().map(|scope| (*scope).to_string()).collect(),
             Utc::now(),
             Nullable::Null,
@@ -745,10 +730,10 @@ mod tests {
             pool.clone(),
             pool.clone(),
             None,
-            PlayerDbClient::new().unwrap(),
+            MojangProfileResolver::new().unwrap(),
         );
         let credentials = ApiKeyCredentials::generate().unwrap();
-        api.provision_bootstrap_api_key(&credentials.to_token())
+        api.provision_bootstrap_api_key(&credentials.expose())
             .await
             .unwrap();
         let player_id = uuid::Uuid::new_v4();
