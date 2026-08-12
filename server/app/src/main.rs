@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod mcp;
 mod mojang;
 mod object_storage;
 mod records;
@@ -10,7 +11,10 @@ use mojang::MojangProfileResolver;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use tower_http::trace::TraceLayer;
+use crate::mcp::Mcp;
 
 #[tokio::main]
 async fn main() {
@@ -73,7 +77,19 @@ async fn main() {
         .expect("GRAPH_SERVER_ADDR must be a valid socket address");
 
     let api = Arc::new(api);
-    let app = graph_api::server::new(api).layer(TraceLayer::new_for_http());
+
+    let mcp_service = StreamableHttpService::new(
+        || Ok(Mcp),
+        LocalSessionManager::default().into(),
+        StreamableHttpServerConfig::default()
+            .with_legacy_session_mode(false)
+            .with_json_response(true),
+    );
+
+    let app = graph_api::server::new(api)
+        .nest_service("/mcp", mcp_service)
+        .layer(TraceLayer::new_for_http());
+
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind server socket");
