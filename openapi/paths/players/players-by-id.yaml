@@ -51,12 +51,12 @@ patch:
               allOf:
                 - $ref: "../../components/schemas/player.yaml#/properties/discordId"
               description: The Discord user ID to link to the player, or `null` to remove the existing link.
-            status:
-              $ref: "../../components/schemas/player.yaml#/properties/status"
-            currentServer:
-              $ref: "../../components/schemas/player.yaml#/properties/currentServer"
             bio:
               $ref: "../../components/schemas/player.yaml#/properties/bio"
+            firstLoginAt:
+              $ref: "../../components/schemas/player.yaml#/properties/firstLoginAt"
+            lastSeenAt:
+              $ref: "../../components/schemas/player.yaml#/properties/lastSeenAt"
   responses:
     "200":
       description: The player was updated successfully.
