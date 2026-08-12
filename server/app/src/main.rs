@@ -83,12 +83,31 @@ async fn main() {
 
     let api = Arc::new(api);
 
-    let app = graph_api::server::new(api.clone())
-        .merge(mcp::router(
-            pool.clone(),
-            api.punishments_pool().clone(),
-            api.profile_resolver().clone(),
-        ))
+    let mcp = mcp::Mcp::new(
+        pool.clone(),
+        api.punishments_pool().clone(),
+        api.mojang_profile_resolver().clone(),
+    );
+
+    let mcp_service = StreamableHttpService::new(
+        move || Ok(mcp.clone()),
+        LocalSessionManager::default().into(),
+        StreamableHttpServerConfig::default()
+            .with_allowed_hosts(["graph.azisaba.net"])
+            .with_legacy_session_mode(false)
+            .with_json_response(true),
+    );
+
+    let mcp_router =
+        Router::new()
+            .nest_service("/mcp", mcp_service)
+            .layer(middleware::from_fn_with_state(
+                pool.clone(),
+                mcp::authenticate,
+            ));
+
+    let app = graph_api::server::new(api)
+        .merge(mcp_router)
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(addr)
