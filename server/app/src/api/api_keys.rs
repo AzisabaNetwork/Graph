@@ -94,7 +94,11 @@ impl ApiKeys<String> for Api {
             .map(ToString::to_string)
             .collect::<Vec<_>>();
 
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
         sqlx::query(
             r#"
             INSERT INTO api_keys
@@ -385,7 +389,11 @@ impl ApiKeys<String> for Api {
             None => None,
         };
 
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
 
         let exists = sqlx::query_scalar::<_, String>(
             "SELECT public_id FROM api_keys WHERE public_id = ? FOR UPDATE",
@@ -494,7 +502,11 @@ impl Api {
             .map_err(|error| format!("GRAPH_BOOTSTRAP_API_KEY is invalid: {error}"))?;
         let secret_digest = credentials.secret_digest();
 
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
         sqlx::query(
             r#"
             INSERT INTO api_keys
@@ -535,7 +547,11 @@ impl Api {
     }
 
     async fn delete_api_key_tree(&self, root_public_id: &str) -> Result<bool, String> {
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
         let root = sqlx::query_scalar::<_, String>(
             "SELECT public_id FROM api_keys WHERE public_id = ? FOR UPDATE",
         )

@@ -221,7 +221,11 @@ impl Players<String> for Api {
             return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
         };
 
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
         let request =
             sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
                 .bind(path_params.player_id)
@@ -303,7 +307,11 @@ impl Players<String> for Api {
         let (player1_id, player2_id) =
             normalize_friendship(path_params.player_id, path_params.friend_id);
 
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
         match sqlx::query(
             r#"
             INSERT INTO friendships (player1_id, player2_id)
@@ -945,7 +953,11 @@ impl Players<String> for Api {
             return Ok(UpdatePlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
-        let mut transaction = self.default_pool.begin().await.map_err(log_database_error)?;
+        let mut transaction = self
+            .default_pool
+            .begin()
+            .await
+            .map_err(log_database_error)?;
         sqlx::query("INSERT IGNORE INTO players (id) VALUES (?)")
             .bind(path_params.player_id)
             .execute(&mut *transaction)

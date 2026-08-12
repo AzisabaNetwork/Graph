@@ -68,6 +68,10 @@ impl Api {
     pub(crate) fn punishments_pool(&self) -> &MySqlPool {
         &self.punishments_pool
     }
+
+    pub(crate) fn mojang_profile_resolver(&self) -> &MojangProfileResolver {
+        &self.mojang_profile_resolver
+    }
 }
 
 #[async_trait::async_trait]

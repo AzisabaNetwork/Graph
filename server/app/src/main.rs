@@ -7,14 +7,15 @@ mod records;
 
 use crate::object_storage::ObjectStorage;
 use api::Api;
+use axum::{Router, middleware};
 use mojang::MojangProfileResolver;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+};
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
-use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
-use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use tower_http::trace::TraceLayer;
-use crate::mcp::Mcp;
 
 #[tokio::main]
 async fn main() {
@@ -40,23 +41,26 @@ async fn main() {
     let punishments_pool = MySqlPool::connect(&punishments_database_url)
         .await
         .expect("failed to connect punishments database");
+
     validate_punishments_database(&punishments_pool)
         .await
         .expect("punishments database schema is incompatible");
 
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
     let redis_client = redis::Client::open(redis_url).expect("REDIS_URL must be valid");
+
     let redis_config = ConnectionManagerConfig::new()
         .set_min_delay(std::time::Duration::from_millis(250))
         .set_max_delay(std::time::Duration::from_secs(5))
         .set_number_of_retries(5)
         .set_connection_timeout(Some(std::time::Duration::from_secs(5)))
         .set_response_timeout(Some(std::time::Duration::from_secs(5)));
+
     let redis = ConnectionManager::new_lazy_with_config(redis_client.clone(), redis_config)
         .expect("failed to configure Redis connection manager");
 
     let api = Api::new_with_redis(
-        pool,
+        pool.clone(),
         punishments_pool,
         ObjectStorage::from_env().await,
         MojangProfileResolver::new().expect("failed to create PlayerDB client"),
@@ -68,6 +72,7 @@ async fn main() {
         api.provision_bootstrap_api_key(&bootstrap_api_key)
             .await
             .expect("failed to provision bootstrap API key");
+
         tracing::info!("bootstrap API key provisioned");
     }
 
@@ -78,16 +83,29 @@ async fn main() {
 
     let api = Arc::new(api);
 
+    let mcp = mcp::Mcp::new(
+        pool.clone(),
+        api.punishments_pool().clone(),
+        api.mojang_profile_resolver().clone(),
+    );
     let mcp_service = StreamableHttpService::new(
-        || Ok(Mcp),
+        move || Ok(mcp.clone()),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_legacy_session_mode(false)
             .with_json_response(true),
     );
 
+    let mcp_router =
+        Router::new()
+            .nest_service("/mcp", mcp_service)
+            .layer(middleware::from_fn_with_state(
+                pool.clone(),
+                mcp::authenticate,
+            ));
+
     let app = graph_api::server::new(api)
-        .nest_service("/mcp", mcp_service)
+        .merge(mcp_router)
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -95,6 +113,7 @@ async fn main() {
         .expect("failed to bind server socket");
 
     tracing::info!(%addr, "graph-server listening");
+
     axum::serve(listener, app)
         .await
         .expect("graph-server failed");
@@ -114,5 +133,6 @@ async fn validate_punishments_database(pool: &MySqlPool) -> Result<(), sqlx::Err
     ] {
         sqlx::query(query).fetch_optional(pool).await?;
     }
+
     Ok(())
 }
