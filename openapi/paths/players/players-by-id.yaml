@@ -53,6 +53,14 @@ patch:
               description: The Discord user ID to link to the player, or `null` to remove the existing link.
             bio:
               $ref: "../../components/schemas/player.yaml#/properties/bio"
+            status:
+              $ref: "../../components/schemas/player.yaml#/properties/status"
+            currentServer:
+              $ref: "../../components/schemas/player.yaml#/properties/currentServer"
+            currentLocale:
+              $ref: "../../components/schemas/player.yaml#/properties/currentLocale"
+            currentClientVersion:
+              $ref: "../../components/schemas/player.yaml#/properties/currentClientVersion"
             firstLoginAt:
               $ref: "../../components/schemas/player.yaml#/properties/firstLoginAt"
             lastSeenAt:

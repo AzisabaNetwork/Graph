@@ -34,26 +34,22 @@ properties:
     description: The player's biography of up to 160 characters, or `null` if it is not set.
   status:
     $ref: "../../openapi.yaml#/components/schemas/PlayerStatus"
-    readOnly: true
   currentServer:
     type:
       - string
       - "null"
-    readOnly: true
     maxLength: 255
     description: The server to which the player is currently connected, or `null` if the player is offline.
   currentLocale:
     type:
       - string
       - "null"
-    readOnly: true
     maxLength: 255
     description: The locale used by the player's current Minecraft client, or `null` if the player is offline.
   currentClientVersion:
     type:
       - string
       - "null"
-    readOnly: true
     maxLength: 255
     description: The version of the player's current Minecraft client, or `null` if the player is offline.
   firstLoginAt:
