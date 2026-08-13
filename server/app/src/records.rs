@@ -3,10 +3,11 @@ use graph_api::models::{
     ApiKey, Crawl, PatchNote, Player, PlayerStatus, Proof, Punishment, PunishmentType, Revocation1,
 };
 use graph_api::types::Nullable;
+use serde::Serialize;
 use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct ApiKeyRecord {
     pub(crate) name: String,
     pub(crate) public_id: String,
@@ -29,7 +30,7 @@ impl ApiKeyRecord {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct CrawlRecord {
     pub(crate) id: Uuid,
     pub(crate) address: String,
@@ -62,7 +63,7 @@ impl From<CrawlRecord> for Crawl {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct PatchNoteRecord {
     pub(crate) id: Uuid,
     pub(crate) target: String,
@@ -88,7 +89,7 @@ impl PatchNoteRecord {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct PlayerRecord {
     pub(crate) id: Uuid,
     pub(crate) discord_id: Option<String>,
@@ -139,7 +140,7 @@ impl PlayerRecord {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct PunishmentRecord {
     pub(crate) id: i64,
     pub(crate) name: String,
@@ -205,7 +206,7 @@ impl PunishmentRecord {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct ProofRecord {
     pub(crate) id: i64,
     pub(crate) text: String,
@@ -224,7 +225,7 @@ impl TryFrom<ProofRecord> for Proof {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Serialize)]
 pub(crate) struct PunishmentProofRecord {
     pub(crate) punish_id: i64,
     pub(crate) id: i64,
