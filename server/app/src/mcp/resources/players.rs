@@ -80,3 +80,21 @@ impl Mcp {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_valid_player_uri() {
+        let uuid = Uuid::new_v4();
+        let uri = format!("graph://players/{}", uuid);
+        assert_eq!(parse_uri(&uri), Some(uuid));
+    }
+
+    #[test]
+    fn rejects_invalid_player_uri() {
+        assert_eq!(parse_uri("graph://players/invalid"), None);
+        assert_eq!(parse_uri("graph://other/uuid"), None);
+    }
+}

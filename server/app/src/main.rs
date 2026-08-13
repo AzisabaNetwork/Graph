@@ -7,12 +7,8 @@ mod records;
 
 use crate::object_storage::ObjectStorage;
 use api::Api;
-use axum::{Router, middleware};
 use mojang::MojangProfileResolver;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
-use rmcp::transport::streamable_http_server::{
-    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
-};
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;

@@ -50,12 +50,7 @@ impl Api {
         redis_client: redis::Client,
         redis: ConnectionManager,
     ) -> Self {
-        let mut api = Self::new(
-            pool,
-            punishments_pool,
-            object_storage,
-            profile_resolver,
-        );
+        let mut api = Self::new(pool, punishments_pool, object_storage, profile_resolver);
         api.redis_publisher = Some(redis);
         api.start_stream_event_listener(redis_client);
         api

@@ -656,11 +656,7 @@ impl Players<String> for Api {
             None => None,
         };
         if let Some(username) = query_params.username.as_deref() {
-            let profile = match self
-                .profile_resolver
-                .find_by_username(username)
-                .await?
-            {
+            let profile = match self.profile_resolver.find_by_username(username).await? {
                 Some(profile) => profile,
                 None => {
                     return Ok(
