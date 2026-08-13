@@ -97,7 +97,7 @@ impl Api {
     }
 
     async fn load_player(&self, id: Uuid, include_details: bool) -> Result<Option<Player>, String> {
-        let Some(profile) = self.mojang_profile_resolver.find_by_uuid(id).await? else {
+        let Some(profile) = self.profile_resolver.find_by_uuid(id).await? else {
             return Ok(None);
         };
         let record = self.load_player_record(id).await?;
@@ -136,12 +136,12 @@ impl Api {
 
         let mut tasks = JoinSet::new();
         for (index, id) in ids.iter().copied().enumerate() {
-            let mojang_profile_resolver = self.mojang_profile_resolver.clone();
+            let profile_resolver = self.profile_resolver.clone();
             let record = records
                 .remove(&id)
                 .unwrap_or_else(|| PlayerRecord::empty(id));
             tasks.spawn(async move {
-                let profile = mojang_profile_resolver.find_by_uuid(id).await?;
+                let profile = profile_resolver.find_by_uuid(id).await?;
                 Ok::<_, MojangProfileResolverError>((index, record, profile))
             });
         }
@@ -166,8 +166,8 @@ impl Api {
 
     async fn players_exist(&self, first: Uuid, second: Uuid) -> Result<bool, String> {
         let (first, second) = tokio::try_join!(
-            self.mojang_profile_resolver.find_by_uuid(first),
-            self.mojang_profile_resolver.find_by_uuid(second),
+            self.profile_resolver.find_by_uuid(first),
+            self.profile_resolver.find_by_uuid(second),
         )?;
         Ok(first.is_some() && second.is_some())
     }
@@ -477,7 +477,7 @@ impl Players<String> for Api {
             );
         }
         if self
-            .mojang_profile_resolver
+            .profile_resolver
             .find_by_uuid(path_params.player_id)
             .await?
             .is_none()
@@ -543,7 +543,7 @@ impl Players<String> for Api {
             );
         }
         if self
-            .mojang_profile_resolver
+            .profile_resolver
             .find_by_uuid(path_params.player_id)
             .await?
             .is_none()
@@ -656,11 +656,7 @@ impl Players<String> for Api {
             None => None,
         };
         if let Some(username) = query_params.username.as_deref() {
-            let profile = match self
-                .mojang_profile_resolver
-                .find_by_username(username)
-                .await?
-            {
+            let profile = match self.profile_resolver.find_by_username(username).await? {
                 Some(profile) => profile,
                 None => {
                     return Ok(
@@ -946,7 +942,7 @@ impl Players<String> for Api {
         }
 
         let Some(profile) = self
-            .mojang_profile_resolver
+            .profile_resolver
             .find_by_uuid(path_params.player_id)
             .await?
         else {

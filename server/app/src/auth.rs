@@ -21,10 +21,10 @@ pub(crate) struct ApiKeyCredentials {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ApiKeyCredentialsParseError {
-    InvalidPrefix,
-    InvalidFormat,
-    InvalidPublicId,
-    InvalidSecret,
+    Prefix,
+    Format,
+    PublicId,
+    Secret,
 }
 
 pub(crate) trait ApiKeyScopeChecker {
@@ -109,18 +109,18 @@ impl FromStr for ApiKeyCredentials {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let value = s
             .strip_prefix(API_KEY_PREFIX)
-            .ok_or(ApiKeyCredentialsParseError::InvalidPrefix)?;
+            .ok_or(ApiKeyCredentialsParseError::Prefix)?;
 
         let (public_id, secret) = value
             .split_once('.')
-            .ok_or(ApiKeyCredentialsParseError::InvalidFormat)?;
+            .ok_or(ApiKeyCredentialsParseError::Format)?;
 
         if !is_valid_component::<PUBLIC_ID_BYTES>(public_id) {
-            return Err(ApiKeyCredentialsParseError::InvalidPublicId);
+            return Err(ApiKeyCredentialsParseError::PublicId);
         }
 
         if !is_valid_component::<SECRET_BYTES>(secret) {
-            return Err(ApiKeyCredentialsParseError::InvalidSecret);
+            return Err(ApiKeyCredentialsParseError::Secret);
         }
 
         Ok(Self {
@@ -142,10 +142,10 @@ impl Debug for ApiKeyCredentials {
 impl Display for ApiKeyCredentialsParseError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::InvalidPrefix => "invalid API key prefix",
-            Self::InvalidFormat => "invalid API key format",
-            Self::InvalidPublicId => "invalid API key public ID",
-            Self::InvalidSecret => "invalid API key secret",
+            Self::Prefix => "invalid API key prefix",
+            Self::Format => "invalid API key format",
+            Self::PublicId => "invalid API key public ID",
+            Self::Secret => "invalid API key secret",
         })
     }
 }
@@ -207,7 +207,7 @@ mod tests {
     fn rejects_non_canonical_credentials() {
         assert_eq!(
             "invalid".parse::<ApiKeyCredentials>().unwrap_err(),
-            ApiKeyCredentialsParseError::InvalidPrefix
+            ApiKeyCredentialsParseError::Prefix
         );
     }
 

@@ -19,7 +19,7 @@ pub(crate) struct Api {
     default_pool: MySqlPool,
     punishments_pool: MySqlPool,
     object_storage: Option<ObjectStorage>,
-    mojang_profile_resolver: MojangProfileResolver,
+    profile_resolver: MojangProfileResolver,
     redis_publisher: Option<ConnectionManager>,
     stream_events: broadcast::Sender<graph_api::models::StreamEvent>,
 }
@@ -29,14 +29,14 @@ impl Api {
         pool: MySqlPool,
         punishments_pool: MySqlPool,
         object_storage: Option<ObjectStorage>,
-        mojang_profile_resolver: MojangProfileResolver,
+        profile_resolver: MojangProfileResolver,
     ) -> Self {
         let (stream_events, _) = broadcast::channel(256);
         Self {
             default_pool: pool,
             punishments_pool,
             object_storage,
-            mojang_profile_resolver,
+            profile_resolver,
             redis_publisher: None,
             stream_events,
         }
@@ -46,22 +46,17 @@ impl Api {
         pool: MySqlPool,
         punishments_pool: MySqlPool,
         object_storage: Option<ObjectStorage>,
-        mojang_profile_resolver: MojangProfileResolver,
+        profile_resolver: MojangProfileResolver,
         redis_client: redis::Client,
         redis: ConnectionManager,
     ) -> Self {
-        let mut api = Self::new(
-            pool,
-            punishments_pool,
-            object_storage,
-            mojang_profile_resolver,
-        );
+        let mut api = Self::new(pool, punishments_pool, object_storage, profile_resolver);
         api.redis_publisher = Some(redis);
         api.start_stream_event_listener(redis_client);
         api
     }
 
-    pub(crate) fn pool(&self) -> &MySqlPool {
+    pub(crate) fn default_pool(&self) -> &MySqlPool {
         &self.default_pool
     }
 
@@ -69,8 +64,8 @@ impl Api {
         &self.punishments_pool
     }
 
-    pub(crate) fn mojang_profile_resolver(&self) -> &MojangProfileResolver {
-        &self.mojang_profile_resolver
+    pub(crate) fn profile_resolver(&self) -> &MojangProfileResolver {
+        &self.profile_resolver
     }
 }
 

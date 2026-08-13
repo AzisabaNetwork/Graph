@@ -88,7 +88,7 @@ pub(crate) fn punishment_proof_deleted_event(punishment_id: u64, proof: Proof) -
 }
 
 fn stream_event_type(event: &StreamEvent) -> &str {
-    let value = match event {
+    match event {
         StreamEvent::CrawlCreatedEvent(event) => &event.r_type,
         StreamEvent::CrawlDeletedEvent(event) => &event.r_type,
         StreamEvent::FriendAddedEvent(event) => &event.r_type,
@@ -105,8 +105,7 @@ fn stream_event_type(event: &StreamEvent) -> &str {
         StreamEvent::PunishmentProofUpdatedEvent(event) => &event.r_type,
         StreamEvent::PunishmentRevokedEvent(event) => &event.r_type,
         StreamEvent::PunishmentUpdatedEvent(event) => &event.r_type,
-    };
-    value
+    }
 }
 
 fn is_visible_to(event: &StreamEvent, api_key: &ApiKey) -> bool {

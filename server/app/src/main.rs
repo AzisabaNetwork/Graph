@@ -7,12 +7,8 @@ mod records;
 
 use crate::object_storage::ObjectStorage;
 use api::Api;
-use axum::{Router, middleware};
 use mojang::MojangProfileResolver;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
-use rmcp::transport::streamable_http_server::{
-    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
-};
 use sqlx::MySqlPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
@@ -83,31 +79,12 @@ async fn main() {
 
     let api = Arc::new(api);
 
-    let mcp = mcp::Mcp::new(
-        pool.clone(),
-        api.punishments_pool().clone(),
-        api.mojang_profile_resolver().clone(),
-    );
-
-    let mcp_service = StreamableHttpService::new(
-        move || Ok(mcp.clone()),
-        LocalSessionManager::default().into(),
-        StreamableHttpServerConfig::default()
-            .with_allowed_hosts(["graph.azisaba.net"])
-            .with_legacy_session_mode(false)
-            .with_json_response(true),
-    );
-
-    let mcp_router =
-        Router::new()
-            .nest_service("/mcp", mcp_service)
-            .layer(middleware::from_fn_with_state(
-                pool.clone(),
-                mcp::authenticate,
-            ));
-
-    let app = graph_api::server::new(api)
-        .merge(mcp_router)
+    let app = graph_api::server::new(api.clone())
+        .merge(mcp::router(
+            pool.clone(),
+            api.punishments_pool().clone(),
+            api.profile_resolver().clone(),
+        ))
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(addr)

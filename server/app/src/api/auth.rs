@@ -32,7 +32,7 @@ impl ApiAuthBasic for Api {
 
         let credentials = token.parse::<ApiKeyCredentials>().ok()?;
         credentials
-            .authenticate(self.pool())
+            .authenticate(self.default_pool())
             .await
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to authenticate API key");
