@@ -8,7 +8,7 @@ use headers::authorization::Bearer;
 use http::StatusCode;
 use sqlx::MySqlPool;
 
-pub(crate) async fn authenticate(
+pub(super) async fn authenticate(
     State(pool): State<MySqlPool>,
     TypedHeader(authorization): TypedHeader<Authorization<Bearer>>,
     mut request: Request,
