@@ -1,8 +1,8 @@
 use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
-use crate::mcp::models::{PatchNoteSummary, ResourceLink};
+use crate::mcp::models::{PatchNoteList, PatchNoteSummary, ResourceLink};
 use chrono::{DateTime, Utc};
-use graph_api::models::{ApiKeyScope};
+use graph_api::models::ApiKeyScope;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, tool, tool_router};
@@ -35,7 +35,7 @@ impl Mcp {
         &self,
         ctx: RequestContext<RoleServer>,
         params: Parameters<SearchPatchNotesArgs>,
-    ) -> Result<Json<Vec<PatchNoteSummary>>, ErrorData> {
+    ) -> Result<Json<PatchNoteList>, ErrorData> {
         let api_key = self.get_api_key(&ctx)?;
         let args = params.0;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
@@ -107,6 +107,6 @@ impl Mcp {
             })
             .collect();
 
-        Ok(Json(results))
+        Ok(Json(PatchNoteList { results }))
     }
 }

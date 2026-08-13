@@ -2,7 +2,7 @@ use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
 use crate::mcp::models::{NetworkOverview, PopulationPoint, PopulationTrend, ServerStatus};
 use chrono::{DateTime, Duration, Utc};
-use graph_api::models::{ApiKeyScope};
+use graph_api::models::ApiKeyScope;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, tool, tool_router};

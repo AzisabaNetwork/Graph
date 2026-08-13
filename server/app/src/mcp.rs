@@ -9,8 +9,8 @@ use axum::Router;
 use graph_api::models::ApiKey;
 use http::request::Parts;
 use rmcp::model::{
-    ListResourceTemplatesResult, PaginatedRequestParams,
-    ReadResourceRequestParams, ReadResourceResponse, ServerCapabilities, ServerInfo,
+    ListResourceTemplatesResult, PaginatedRequestParams, ReadResourceRequestParams,
+    ReadResourceResponse, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -88,64 +88,6 @@ impl Mcp {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn all_tools_have_object_input_schema() {
-        let router = tools::tool_router();
-        let tools = router.list_all();
-
-        assert!(!tools.is_empty(), "No tools registered");
-
-        for tool in tools {
-            let schema = &tool.input_schema;
-            assert_eq!(
-                schema.get("type").and_then(|v| v.as_str()),
-                Some("object"),
-                "Tool '{}' must have an object root schema",
-                tool.name
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn get_network_status_has_valid_empty_object_schema() {
-        let router = tools::tool_router();
-        let tool = router.get("get_network_status").expect("Tool not found");
-
-        assert_eq!(
-            tool.input_schema.get("type").and_then(|v| v.as_str()),
-            Some("object")
-        );
-        let properties = tool.input_schema.get("properties").and_then(|v| v.as_object());
-        assert!(properties.is_some(), "Should have properties field");
-        assert!(properties.unwrap().is_empty(), "Properties should be empty for parameterless tool");
-    }
-
-    #[tokio::test]
-    async fn tool_names_are_unique() {
-        let router = tools::tool_router();
-        let tools = router.list_all();
-        let names: std::collections::HashSet<_> = tools.iter().map(|t| &t.name).collect();
-        assert_eq!(names.len(), tools.len(), "Tool names are not unique");
-    }
-
-    #[tokio::test]
-    async fn tool_descriptions_are_non_empty() {
-        let router = tools::tool_router();
-        let tools = router.list_all();
-        for tool in tools {
-            assert!(
-                tool.description.as_ref().map_or(false, |d| !d.is_empty()),
-                "Tool '{}' has an empty description",
-                tool.name
-            );
-        }
-    }
-}
-
 pub(crate) fn router(
     default_pool: MySqlPool,
     punishments_pool: MySqlPool,
@@ -168,4 +110,85 @@ pub(crate) fn router(
             default_pool,
             auth::authenticate,
         ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn all_tools_have_object_input_schema() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+
+        assert!(!tools.is_empty(), "No tools registered");
+
+        for tool in tools {
+            let schema = &tool.input_schema;
+            assert_eq!(
+                schema.get("type").and_then(|v| v.as_str()),
+                Some("object"),
+                "Tool '{}' must have an object root input schema",
+                tool.name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn all_tools_have_object_output_schema() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+
+        for tool in tools {
+            if let Some(schema) = &tool.output_schema {
+                assert_eq!(
+                    schema.get("type").and_then(|v| v.as_str()),
+                    Some("object"),
+                    "Tool '{}' must have an object root output schema",
+                    tool.name
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn get_network_status_has_valid_empty_object_schema() {
+        let router = tools::tool_router();
+        let tool = router.get("get_network_status").expect("Tool not found");
+
+        assert_eq!(
+            tool.input_schema.get("type").and_then(|v| v.as_str()),
+            Some("object")
+        );
+        let properties = tool
+            .input_schema
+            .get("properties")
+            .and_then(|v| v.as_object());
+        assert!(properties.is_some(), "Should have properties field");
+        assert!(
+            properties.unwrap().is_empty(),
+            "Properties should be empty for parameterless tool"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_names_are_unique() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+        let names: std::collections::HashSet<_> = tools.iter().map(|t| &t.name).collect();
+        assert_eq!(names.len(), tools.len(), "Tool names are not unique");
+    }
+
+    #[tokio::test]
+    async fn tool_descriptions_are_non_empty() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+        for tool in tools {
+            assert!(
+                tool.description.as_ref().is_some_and(|d| !d.is_empty()),
+                "Tool '{}' has an empty description",
+                tool.name
+            );
+        }
+    }
 }

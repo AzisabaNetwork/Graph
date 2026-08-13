@@ -53,6 +53,11 @@ pub struct PunishmentSummary {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
+pub struct PunishmentList {
+    pub punishments: Vec<PunishmentSummary>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct PopulationTrend {
     pub address: String,
     pub port: u16,
@@ -92,4 +97,9 @@ pub struct PatchNoteSummary {
     pub category: String,
     pub created_at: DateTime<Utc>,
     pub resource_link: ResourceLink,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
+pub struct PatchNoteList {
+    pub results: Vec<PatchNoteSummary>,
 }

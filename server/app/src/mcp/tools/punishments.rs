@@ -1,8 +1,8 @@
 use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
-use crate::mcp::models::{PunishmentSummary, ResourceLink};
+use crate::mcp::models::{PunishmentList, PunishmentSummary, ResourceLink};
 use crate::records::PunishmentRecord;
-use graph_api::models::{ApiKeyScope};
+use graph_api::models::ApiKeyScope;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, tool, tool_router};
@@ -29,7 +29,7 @@ impl Mcp {
         &self,
         ctx: RequestContext<RoleServer>,
         params: Parameters<SearchPunishmentsArgs>,
-    ) -> Result<Json<Vec<PunishmentSummary>>, ErrorData> {
+    ) -> Result<Json<PunishmentList>, ErrorData> {
         let api_key = self.get_api_key(&ctx)?;
         let args = params.0;
         if !api_key.has_scope(&ApiKeyScope::PunishmentsColonRead) {
@@ -80,6 +80,6 @@ impl Mcp {
             })
             .collect();
 
-        Ok(Json(punishments))
+        Ok(Json(PunishmentList { punishments }))
     }
 }

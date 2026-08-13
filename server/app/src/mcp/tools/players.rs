@@ -16,7 +16,6 @@ pub(super) struct PlayerArgs {
     pub player: String,
 }
 
-
 #[tool_router(router = players_tools, vis = "pub(super)")]
 impl Mcp {
     #[tool(

@@ -1,8 +1,6 @@
 use crate::mcp::Mcp;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{
-    ContentBlock, GetPromptResult, PromptMessage, Role, TextContent,
-};
+use rmcp::model::{ContentBlock, GetPromptResult, PromptMessage, Role, TextContent};
 use rmcp::{ErrorData, prompt, prompt_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
