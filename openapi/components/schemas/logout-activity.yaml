@@ -1,0 +1,10 @@
+type: object
+title: LogoutActivity
+description: Represents an activity generated when a player logs out.
+required:
+  - data
+properties:
+  data:
+    type: object
+    title: LogoutActivityData
+    description: The data associated with the player logout.

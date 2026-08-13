@@ -1,0 +1,22 @@
+type: object
+title: ServerConnectActivity
+description: Represents an activity generate when a player connects to a server.
+required:
+  - data
+properties:
+  data:
+    type: object
+    title: ServerConnectActivityData
+    description: The data associated with the server connection.
+    required:
+      - serverName
+      - previousServerName
+    properties:
+      serverId:
+        type: string
+        description: The identifier of the server the player connected to.
+      previousServerId:
+        type:
+          - string
+          - "null"
+        description: The identifier of the server the player was previously connected to.

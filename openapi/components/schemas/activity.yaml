@@ -1,0 +1,51 @@
+type: object
+title: Activity
+description: Represents an activity performed by or associated with a player.
+required:
+  - id
+  - type
+  - playerId
+  - serverId
+  - locale
+  - clientVersion
+  - clientBrand
+  - performedAt
+properties:
+  id:
+    $ref: "../../openapi.yaml#/components/schemas/ActivityId"
+    readOnly: true
+  type:
+    type: string
+    readOnly: true
+  playerId:
+    $ref: "../../openapi.yaml#/components/schemas/PlayerId"
+    readOnly: true
+  serverID:
+    type:
+      - string
+      - "null"
+    maxLength: 255
+    description: The unique identifier of the server the player was connected to at the time of the activity, or `null` if unavailable.
+  locale:
+    type:
+      - string
+      - "null"
+    maxLength: 255
+    description: The locale used by the player's Minecraft client at the time of the activity, or `null` if unavailable.
+  clientVersion:
+    type:
+      - string
+      - "null"
+    maxLength: 255
+    description: The version of the player's Minecraft client at the time of the activity, or `null` if unavailable.
+  clientBrand:
+    type:
+      - string
+      - "null"
+    maxLength: 255
+    description: The brand of the player's Minecraft client at the time of the activity, or `null` if unavailable.
+  performedAt:
+    type: string
+    format: date-time
+    readOnly: true
+    description: The date and time when the activity was performed.

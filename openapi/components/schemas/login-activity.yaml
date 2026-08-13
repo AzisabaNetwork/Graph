@@ -1,0 +1,24 @@
+type: object
+title: LoginActivity
+description: Represents an activity generated when a player logs in.
+required:
+  - data
+properties:
+  data:
+    type: object
+    title: LoginActivityData
+    description: The data associated with the player login.
+    properties:
+      virtualHost:
+        type:
+         - string
+         - "null"
+        maxLength: 254
+        description: The virtual host used by the player to connect.
+      virtualPort:
+        type:
+          - string
+          - "null"
+        minimum: 0
+        maximum: 65535
+        description: The virtual port used by the player to connect.

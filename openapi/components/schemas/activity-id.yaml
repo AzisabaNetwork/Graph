@@ -1,0 +1,4 @@
+type: string
+title: ActivityId
+description: The unique identifier of the activity.
+format: uuid

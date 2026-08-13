@@ -1,0 +1,14 @@
+type: object
+title: ChatActivity
+description: Represents an activity generate when a player sends a chat message.
+required:
+  - data
+properties:
+  data:
+    type: object
+    title: ChatActivityData
+    description: The data associated with the chat message.
+    properties:
+      message:
+        type: string
+        description: The chat message sent by the player.

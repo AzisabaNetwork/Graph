@@ -1,0 +1,16 @@
+type: object
+title: CommandActivity
+description: Represents an activity generate when a player executes a command.
+required:
+  - data
+properties:
+  data:
+    type: object
+    title: CommandActivityData
+    description: The data associated with the command execution.
+    required:
+      - command
+    properties:
+      command:
+        type: string
+        description: The command executed by the player.

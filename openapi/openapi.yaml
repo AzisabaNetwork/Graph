@@ -96,12 +96,27 @@ components:
       $ref: "./components/responses/unauthorized.yaml"
 
   schemas:
+    Activity:
+      $ref: "./components/schemas/activity.yaml"
+      discriminator:
+        propertyName: type
+        mapping:
+          chat: "#/components/schemas/ChatActivity"
+          command: "#/components/schemas/CommandActivity"
+          login: "#/components/schemas/LoginActivity"
+          logout: "#/components/schemas/LogoutActivity"
+    ActivityId:
+      $ref: "./components/schemas/activity-id.yaml"
     ApiKey:
       $ref: "./components/schemas/api-key.yaml"
     ApiKeyId:
       $ref: "./components/schemas/api-key-id.yaml"
     ApiKeyScope:
       $ref: "./components/schemas/api-key-scope.yaml"
+    ChatActivity:
+      $ref: "./components/schemas/chat-activity.yaml"
+    CommandActivity:
+      $ref: "./components/schemas/command-activity.yaml"
     Crawl:
       $ref: "./components/schemas/crawl.yaml"
     CrawlCreatedEvent:
@@ -122,6 +137,10 @@ components:
       $ref: "./components/schemas/friend-request-rejected-event.yaml"
     FriendRequestRemovedEvent:
       $ref: "./components/schemas/friend-request-removed-event.yaml"
+    LoginActivity:
+      $ref: "./components/schemas/login-activity.yaml"
+    LogoutActivity:
+      $ref: "./components/schemas/logout-activity.yaml"
     PatchNote:
       $ref: "./components/schemas/patch-note.yaml"
     PatchNoteCategory:
