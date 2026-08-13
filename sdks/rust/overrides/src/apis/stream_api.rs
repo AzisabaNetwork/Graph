@@ -182,7 +182,9 @@ mod tests {
         "status":"offline",
         "currentServer":null,
         "currentLocale": null,
-        "currentClientVersion": null
+        "currentClientVersion": null,
+        "firstLoginAt": null,
+        "lastSeenAt": null
     }"#;
 
     #[test]
