@@ -178,9 +178,11 @@ mod tests {
         "id":"00000000-0000-0000-0000-000000000001",
         "discordId":null,
         "username":"player",
+        "bio":null,
         "status":"offline",
         "currentServer":null,
-        "bio":null
+        "currentLocale": null,
+        "currentClientVersion": null
     }"#;
 
     #[test]
