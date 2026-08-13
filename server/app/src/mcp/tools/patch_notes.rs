@@ -2,12 +2,12 @@ use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
 use crate::mcp::models::{PatchNoteSummary, ResourceLink};
 use chrono::{DateTime, Utc};
-use graph_api::models::{ApiKey, ApiKeyScope};
-use rmcp::ErrorData;
-use rmcp::model::{CallToolResult, ContentBlock, TextContent, Tool};
+use graph_api::models::{ApiKeyScope};
+use rmcp::handler::server::wrapper::{Json, Parameters};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::sync::Arc;
 
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct SearchPatchNotesArgs {
@@ -25,26 +25,19 @@ pub(super) struct SearchPatchNotesArgs {
     pub limit: Option<u8>,
 }
 
-pub(super) fn tools() -> Vec<Tool> {
-    let schema = serde_json::to_value(schemars::schema_for!(SearchPatchNotesArgs))
-        .unwrap()
-        .as_object()
-        .unwrap()
-        .clone();
-
-    vec![Tool::new(
-        "search_patch_notes",
-        "Search network patch notes with temporal and category filters.",
-        Arc::new(schema),
-    )]
-}
-
+#[tool_router(router = patch_notes_tools, vis = "pub(super)")]
 impl Mcp {
+    #[tool(
+        name = "search_patch_notes",
+        description = "Search network patch notes with temporal and category filters."
+    )]
     pub(super) async fn search_patch_notes(
         &self,
-        api_key: &ApiKey,
-        args: SearchPatchNotesArgs,
-    ) -> Result<CallToolResult, ErrorData> {
+        ctx: RequestContext<RoleServer>,
+        params: Parameters<SearchPatchNotesArgs>,
+    ) -> Result<Json<Vec<PatchNoteSummary>>, ErrorData> {
+        let api_key = self.get_api_key(&ctx)?;
+        let args = params.0;
         if !api_key.has_scope(&ApiKeyScope::PatchNotesColonRead) {
             return Err(ErrorData::invalid_request(
                 "missing required scope: patch-notes:read",
@@ -114,13 +107,6 @@ impl Mcp {
             })
             .collect();
 
-        let content = serde_json::to_string(&results).map_err(|error| {
-            tracing::error!(%error, "failed to serialize patch notes");
-            ErrorData::internal_error("failed to serialize patch notes", None)
-        })?;
-
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(content),
-        )]))
+        Ok(Json(results))
     }
 }

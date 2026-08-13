@@ -9,14 +9,13 @@ use axum::Router;
 use graph_api::models::ApiKey;
 use http::request::Parts;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, GetPromptRequestParams, GetPromptResponse,
-    ListPromptsResult, ListResourceTemplatesResult, ListToolsResult, PaginatedRequestParams,
+    ListResourceTemplatesResult, PaginatedRequestParams,
     ReadResourceRequestParams, ReadResourceResponse, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{ErrorData, RoleServer, ServerHandler};
+use rmcp::{ErrorData, RoleServer, ServerHandler, prompt_handler, tool_handler};
 use sqlx::MySqlPool;
 
 #[derive(Clone, Debug)]
@@ -40,6 +39,8 @@ impl Mcp {
     }
 }
 
+#[tool_handler(router = tools::tool_router())]
+#[prompt_handler(router = Mcp::prompt_router())]
 impl ServerHandler for Mcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
@@ -69,39 +70,6 @@ impl ServerHandler for Mcp {
         let api_key = self.get_api_key(&context)?;
         self.route_resource(api_key, &request.uri).await
     }
-
-    async fn list_tools(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult::with_all_items(tools::list()))
-    }
-
-    async fn call_tool(
-        &self,
-        request: CallToolRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResponse, ErrorData> {
-        let api_key = self.get_api_key(&context)?;
-        self.route_tool(api_key, request).await
-    }
-
-    async fn list_prompts(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListPromptsResult, ErrorData> {
-        Ok(ListPromptsResult::with_all_items(prompts::list()))
-    }
-
-    async fn get_prompt(
-        &self,
-        request: GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<GetPromptResponse, ErrorData> {
-        prompts::get(request)
-    }
 }
 
 impl Mcp {
@@ -117,6 +85,64 @@ impl Mcp {
             .extensions
             .get::<ApiKey>()
             .ok_or_else(|| ErrorData::invalid_request("authentication required", None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn all_tools_have_object_input_schema() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+
+        assert!(!tools.is_empty(), "No tools registered");
+
+        for tool in tools {
+            let schema = &tool.input_schema;
+            assert_eq!(
+                schema.get("type").and_then(|v| v.as_str()),
+                Some("object"),
+                "Tool '{}' must have an object root schema",
+                tool.name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn get_network_status_has_valid_empty_object_schema() {
+        let router = tools::tool_router();
+        let tool = router.get("get_network_status").expect("Tool not found");
+
+        assert_eq!(
+            tool.input_schema.get("type").and_then(|v| v.as_str()),
+            Some("object")
+        );
+        let properties = tool.input_schema.get("properties").and_then(|v| v.as_object());
+        assert!(properties.is_some(), "Should have properties field");
+        assert!(properties.unwrap().is_empty(), "Properties should be empty for parameterless tool");
+    }
+
+    #[tokio::test]
+    async fn tool_names_are_unique() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+        let names: std::collections::HashSet<_> = tools.iter().map(|t| &t.name).collect();
+        assert_eq!(names.len(), tools.len(), "Tool names are not unique");
+    }
+
+    #[tokio::test]
+    async fn tool_descriptions_are_non_empty() {
+        let router = tools::tool_router();
+        let tools = router.list_all();
+        for tool in tools {
+            assert!(
+                tool.description.as_ref().map_or(false, |d| !d.is_empty()),
+                "Tool '{}' has an empty description",
+                tool.name
+            );
+        }
     }
 }
 

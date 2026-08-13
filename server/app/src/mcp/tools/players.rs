@@ -2,12 +2,12 @@ use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
 use crate::mcp::models::{FriendSummary, PlayerOverview, PlayerRelationships, ResourceLink};
 use crate::records::PlayerRecord;
-use graph_api::models::{ApiKey, ApiKeyScope};
-use rmcp::ErrorData;
-use rmcp::model::{CallToolResult, ContentBlock, TextContent, Tool};
+use graph_api::models::ApiKeyScope;
+use rmcp::handler::server::wrapper::{Json, Parameters};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Deserialize, JsonSchema)]
@@ -16,33 +16,20 @@ pub(super) struct PlayerArgs {
     pub player: String,
 }
 
-pub(super) fn tools() -> Vec<Tool> {
-    let player_schema = serde_json::to_value(schemars::schema_for!(PlayerArgs))
-        .unwrap()
-        .as_object()
-        .unwrap()
-        .clone();
 
-    vec![
-        Tool::new(
-            "get_player_overview",
-            "Get a summary of a player's profile, status, and activity counts.",
-            Arc::new(player_schema.clone()),
-        ),
-        Tool::new(
-            "get_player_relationships",
-            "Get a list of a player's friends and pending friend requests.",
-            Arc::new(player_schema),
-        ),
-    ]
-}
-
+#[tool_router(router = players_tools, vis = "pub(super)")]
 impl Mcp {
+    #[tool(
+        name = "get_player_overview",
+        description = "Get a summary of a player's profile, status, and activity counts."
+    )]
     pub(super) async fn get_player_overview(
         &self,
-        api_key: &ApiKey,
-        args: PlayerArgs,
-    ) -> Result<CallToolResult, ErrorData> {
+        ctx: RequestContext<RoleServer>,
+        params: Parameters<PlayerArgs>,
+    ) -> Result<Json<PlayerOverview>, ErrorData> {
+        let api_key = self.get_api_key(&ctx)?;
+        let args = params.0;
         if !api_key.has_any_scope(&[
             ApiKeyScope::PlayersColonRead,
             ApiKeyScope::PlayersColonReadDetails,
@@ -120,21 +107,20 @@ impl Mcp {
             },
         };
 
-        let content = serde_json::to_string(&overview).map_err(|error| {
-            tracing::error!(%error, %player_id, "failed to serialize player overview");
-            ErrorData::internal_error("failed to serialize player overview", None)
-        })?;
-
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(content),
-        )]))
+        Ok(Json(overview))
     }
 
+    #[tool(
+        name = "get_player_relationships",
+        description = "Get a list of a player's friends and pending friend requests."
+    )]
     pub(super) async fn get_player_relationships(
         &self,
-        api_key: &ApiKey,
-        args: PlayerArgs,
-    ) -> Result<CallToolResult, ErrorData> {
+        ctx: RequestContext<RoleServer>,
+        params: Parameters<PlayerArgs>,
+    ) -> Result<Json<PlayerRelationships>, ErrorData> {
+        let api_key = self.get_api_key(&ctx)?;
+        let args = params.0;
         if !api_key.has_any_scope(&[
             ApiKeyScope::PlayersColonRead,
             ApiKeyScope::PlayersColonReadDetails,
@@ -204,14 +190,7 @@ impl Mcp {
             incoming_requests_count: incoming_requests_count as u64,
         };
 
-        let content = serde_json::to_string(&relationships).map_err(|error| {
-            tracing::error!(%error, %player_id, "failed to serialize player relationships");
-            ErrorData::internal_error("failed to serialize player relationships", None)
-        })?;
-
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(content),
-        )]))
+        Ok(Json(relationships))
     }
 
     pub(super) async fn resolve_player(&self, identifier: &str) -> Result<Uuid, ErrorData> {

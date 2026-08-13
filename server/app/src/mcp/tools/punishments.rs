@@ -2,12 +2,12 @@ use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
 use crate::mcp::models::{PunishmentSummary, ResourceLink};
 use crate::records::PunishmentRecord;
-use graph_api::models::{ApiKey, ApiKeyScope};
-use rmcp::ErrorData;
-use rmcp::model::{CallToolResult, ContentBlock, TextContent, Tool};
+use graph_api::models::{ApiKeyScope};
+use rmcp::handler::server::wrapper::{Json, Parameters};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::sync::Arc;
 
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct SearchPunishmentsArgs {
@@ -19,26 +19,19 @@ pub(super) struct SearchPunishmentsArgs {
     pub include_inactive: Option<bool>,
 }
 
-pub(super) fn tools() -> Vec<Tool> {
-    let schema = serde_json::to_value(schemars::schema_for!(SearchPunishmentsArgs))
-        .unwrap()
-        .as_object()
-        .unwrap()
-        .clone();
-
-    vec![Tool::new(
-        "search_punishments",
-        "Search punishment history for a specific target (username, UUID, or IP).",
-        Arc::new(schema),
-    )]
-}
-
+#[tool_router(router = punishments_tools, vis = "pub(super)")]
 impl Mcp {
+    #[tool(
+        name = "search_punishments",
+        description = "Search punishment history for a specific target (username, UUID, or IP)."
+    )]
     pub(super) async fn search_punishments(
         &self,
-        api_key: &ApiKey,
-        args: SearchPunishmentsArgs,
-    ) -> Result<CallToolResult, ErrorData> {
+        ctx: RequestContext<RoleServer>,
+        params: Parameters<SearchPunishmentsArgs>,
+    ) -> Result<Json<Vec<PunishmentSummary>>, ErrorData> {
+        let api_key = self.get_api_key(&ctx)?;
+        let args = params.0;
         if !api_key.has_scope(&ApiKeyScope::PunishmentsColonRead) {
             return Err(ErrorData::invalid_request(
                 "missing required scope: punishments:read",
@@ -87,13 +80,6 @@ impl Mcp {
             })
             .collect();
 
-        let content = serde_json::to_string(&punishments).map_err(|error| {
-            tracing::error!(%error, "failed to serialize punishments");
-            ErrorData::internal_error("failed to serialize punishments", None)
-        })?;
-
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(content),
-        )]))
+        Ok(Json(punishments))
     }
 }

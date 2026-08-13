@@ -2,12 +2,12 @@ use crate::auth::ApiKeyScopeChecker;
 use crate::mcp::Mcp;
 use crate::mcp::models::{NetworkOverview, PopulationPoint, PopulationTrend, ServerStatus};
 use chrono::{DateTime, Duration, Utc};
-use graph_api::models::{ApiKey, ApiKeyScope};
-use rmcp::ErrorData;
-use rmcp::model::{CallToolResult, ContentBlock, TextContent, Tool};
+use graph_api::models::{ApiKeyScope};
+use rmcp::handler::server::wrapper::{Json, Parameters};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::sync::Arc;
 
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct PopulationTrendArgs {
@@ -19,33 +19,19 @@ pub(super) struct PopulationTrendArgs {
     pub interval: String,
 }
 
-pub(super) fn tools() -> Vec<Tool> {
-    let trend_schema = serde_json::to_value(schemars::schema_for!(PopulationTrendArgs))
-        .unwrap()
-        .as_object()
-        .unwrap()
-        .clone();
-
-    vec![
-        Tool::new(
-            "get_population_trend",
-            "Get aggregated population trends for a specific server.",
-            Arc::new(trend_schema),
-        ),
-        Tool::new(
-            "get_network_status",
-            "Get the latest status snapshot for all monitored servers.",
-            Arc::new(serde_json::Map::new()),
-        ),
-    ]
-}
-
+#[tool_router(router = network_tools, vis = "pub(super)")]
 impl Mcp {
+    #[tool(
+        name = "get_population_trend",
+        description = "Get aggregated population trends for a specific server."
+    )]
     pub(super) async fn get_population_trend(
         &self,
-        api_key: &ApiKey,
-        args: PopulationTrendArgs,
-    ) -> Result<CallToolResult, ErrorData> {
+        ctx: RequestContext<RoleServer>,
+        params: Parameters<PopulationTrendArgs>,
+    ) -> Result<Json<PopulationTrend>, ErrorData> {
+        let api_key = self.get_api_key(&ctx)?;
+        let args = params.0;
         if !api_key.has_scope(&ApiKeyScope::CrawlsColonRead) {
             return Err(ErrorData::invalid_request(
                 "missing required scope: crawls:read",
@@ -133,20 +119,18 @@ impl Mcp {
             points,
         };
 
-        let content = serde_json::to_string(&trend).map_err(|error| {
-            tracing::error!(%error, "failed to serialize population trend");
-            ErrorData::internal_error("failed to serialize population trend", None)
-        })?;
-
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(content),
-        )]))
+        Ok(Json(trend))
     }
 
+    #[tool(
+        name = "get_network_status",
+        description = "Get the latest status snapshot for all monitored servers."
+    )]
     pub(super) async fn get_network_status(
         &self,
-        api_key: &ApiKey,
-    ) -> Result<CallToolResult, ErrorData> {
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<Json<NetworkOverview>, ErrorData> {
+        let api_key = self.get_api_key(&ctx)?;
         if !api_key.has_scope(&ApiKeyScope::CrawlsColonRead) {
             return Err(ErrorData::invalid_request(
                 "missing required scope: crawls:read",
@@ -187,13 +171,6 @@ impl Mcp {
 
         let overview = NetworkOverview { servers };
 
-        let content = serde_json::to_string(&overview).map_err(|error| {
-            tracing::error!(%error, "failed to serialize network status");
-            ErrorData::internal_error("failed to serialize network status", None)
-        })?;
-
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(content),
-        )]))
+        Ok(Json(overview))
     }
 }
