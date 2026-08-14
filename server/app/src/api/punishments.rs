@@ -15,12 +15,15 @@ use graph_api::models::*;
 use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{MySql, QueryBuilder};
+use sha2::{Digest, Sha256};
+use sqlx::{Connection, MySql, MySqlConnection, QueryBuilder};
 use std::{collections::BTreeMap, net::IpAddr};
 use uuid::Uuid;
 
 const DEFAULT_LIMIT: u8 = 20;
 const MAX_LIMIT: u8 = 100;
+const MAX_TRANSACTION_ATTEMPTS: usize = 3;
+const PUNISHMENT_LOCK_TIMEOUT_SECONDS: u32 = 5;
 type PunishmentCursor = Cursor<i64, u64>;
 
 fn can_read(key: &ApiKey) -> bool {
@@ -265,28 +268,60 @@ impl Punishments<String> for Api {
             return Ok(CreatePunishmentResponse::Status400_TheRequestIsInvalid);
         }
         let server = body.server.to_lowercase();
-        let mut tx = self.punishments_pool.begin().await.map_err(db_error)?;
-        let conflict = sqlx::query_scalar::<_, i64>("SELECT id FROM punishments WHERE target = ? AND type = ? AND server = ? LIMIT 1 FOR UPDATE")
-            .bind(&target).bind(punishment_type_database_value(kind)).bind(&server).fetch_optional(&mut *tx).await.map_err(db_error)?;
-        if conflict.is_some() {
-            tx.rollback().await.map_err(db_error)?;
+        let punishment_type = punishment_type_database_value(kind);
+        let lock_name = punishment_creation_lock_name(&target, punishment_type, &server);
+        let mut connection = self.punishments_pool.acquire().await.map_err(db_error)?;
+        // GET_LOCK is connection-scoped rather than transaction-scoped. Closing on
+        // drop guarantees cancellation or panic cannot return a still-locked
+        // connection to the pool.
+        connection.close_on_drop();
+        let acquired = sqlx::query_scalar::<_, Option<i64>>("SELECT GET_LOCK(?, ?)")
+            .bind(&lock_name)
+            .bind(PUNISHMENT_LOCK_TIMEOUT_SECONDS)
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(db_error)?;
+        if acquired != Some(1) {
+            return Err("timed out waiting to create a conflicting punishment".to_string());
+        }
+
+        let result = create_punishment_with_retry(
+            &mut connection,
+            body,
+            actor_id,
+            &target,
+            punishment_type,
+            &server,
+            now,
+            end,
+        )
+        .await;
+        let released = sqlx::query_scalar::<_, Option<i64>>("SELECT RELEASE_LOCK(?)")
+            .bind(&lock_name)
+            .fetch_one(&mut *connection)
+            .await;
+        match released {
+            Ok(Some(1)) => {}
+            Ok(result) => {
+                tracing::warn!(
+                    ?result,
+                    "punishment creation lock was not explicitly released"
+                );
+            }
+            Err(release_error) => {
+                tracing::warn!(%release_error, "failed to explicitly release punishment creation lock");
+            }
+        }
+        let outcome = match result {
+            Ok(outcome) => outcome,
+            Err(error) => return Err(db_error(error)),
+        };
+
+        let CreatePunishmentOutcome::Created(id) = outcome else {
             return Ok(
                 CreatePunishmentResponse::Status409_AConflictingActivePunishmentAlreadyExists,
             );
-        }
-        let result = sqlx::query("INSERT INTO punishmentHistory (name, target, reason, operator, type, start, end, server, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')")
-            .bind(&body.target_name).bind(&target).bind(&body.reason).bind(actor_id.to_string()).bind(punishment_type_database_value(kind))
-            .bind(now.timestamp_millis()).bind(end).bind(&server).execute(&mut *tx).await.map_err(db_error)?;
-        let id = i64::try_from(result.last_insert_id())
-            .map_err(|_| "punishment ID exceeds signed 64-bit range".to_string())?;
-        sqlx::query("INSERT INTO punishments (id, name, target, reason, operator, type, start, end, server, extra) SELECT id, name, target, reason, operator, type, start, end, server, extra FROM punishmentHistory WHERE id = ?")
-            .bind(id).execute(&mut *tx).await.map_err(db_error)?;
-        sqlx::query("INSERT INTO events (event_id, data, handled) VALUES ('add_punishment', ?, 1)")
-            .bind(serde_json::json!({"id": id}).to_string())
-            .execute(&mut *tx)
-            .await
-            .map_err(db_error)?;
-        tx.commit().await.map_err(db_error)?;
+        };
         let punishment = self
             .fetch_punishment(id)
             .await?
@@ -796,6 +831,118 @@ impl Punishments<String> for Api {
     }
 }
 
+enum CreatePunishmentOutcome {
+    Created(i64),
+    Conflict,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_punishment_with_retry(
+    connection: &mut MySqlConnection,
+    body: &CreatePunishmentRequest,
+    actor_id: Uuid,
+    target: &str,
+    punishment_type: &str,
+    server: &str,
+    now: DateTime<Utc>,
+    end: i64,
+) -> Result<CreatePunishmentOutcome, sqlx::Error> {
+    for attempt in 1..=MAX_TRANSACTION_ATTEMPTS {
+        match create_punishment_once(
+            connection,
+            body,
+            actor_id,
+            target,
+            punishment_type,
+            server,
+            now,
+            end,
+        )
+        .await
+        {
+            Err(error) if is_mysql_deadlock(&error) && attempt < MAX_TRANSACTION_ATTEMPTS => {
+                tracing::warn!(attempt, %target, %punishment_type, %server, "retrying punishment creation after deadlock");
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the final transaction attempt always returns")
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_punishment_once(
+    connection: &mut MySqlConnection,
+    body: &CreatePunishmentRequest,
+    actor_id: Uuid,
+    target: &str,
+    punishment_type: &str,
+    server: &str,
+    now: DateTime<Utc>,
+    end: i64,
+) -> Result<CreatePunishmentOutcome, sqlx::Error> {
+    let mut tx = connection.begin().await?;
+    let conflict = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM punishments WHERE target = ? AND type = ? AND server = ? LIMIT 1",
+    )
+    .bind(target)
+    .bind(punishment_type)
+    .bind(server)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if conflict.is_some() {
+        tx.rollback().await?;
+        return Ok(CreatePunishmentOutcome::Conflict);
+    }
+
+    let result = sqlx::query("INSERT INTO punishmentHistory (name, target, reason, operator, type, start, end, server, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')")
+        .bind(&body.target_name)
+        .bind(target)
+        .bind(&body.reason)
+        .bind(actor_id.to_string())
+        .bind(punishment_type)
+        .bind(now.timestamp_millis())
+        .bind(end)
+        .bind(server)
+        .execute(&mut *tx)
+        .await?;
+    let id = i64::try_from(result.last_insert_id())
+        .map_err(|_| sqlx::Error::Protocol("punishment ID exceeds signed 64-bit range".into()))?;
+    sqlx::query("INSERT INTO punishments (id, name, target, reason, operator, type, start, end, server, extra) SELECT id, name, target, reason, operator, type, start, end, server, extra FROM punishmentHistory WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO events (event_id, data, handled) VALUES ('add_punishment', ?, 1)")
+        .bind(serde_json::json!({"id": id}).to_string())
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(CreatePunishmentOutcome::Created(id))
+}
+
+fn punishment_creation_lock_name(target: &str, punishment_type: &str, server: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"azisaba-graph:punishment:");
+    digest.update(target.as_bytes());
+    digest.update([0]);
+    digest.update(punishment_type.as_bytes());
+    digest.update([0]);
+    digest.update(server.as_bytes());
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn is_mysql_deadlock(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::Database(error) => error
+            .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+            .is_some_and(|error| error.number() == 1213 && error.code() == Some("40001")),
+        _ => false,
+    }
+}
+
 fn db_error(error: sqlx::Error) -> String {
     tracing::error!(%error, "punishments database operation failed");
     "punishments database operation failed".to_string()
@@ -890,6 +1037,21 @@ mod tests {
         );
         assert_eq!(with_seen("OTHER", true), "OTHER,SEEN");
         assert_eq!(with_seen("OTHER,SEEN", false), "OTHER");
+    }
+
+    #[test]
+    fn punishment_creation_lock_names_are_stable_and_key_specific() {
+        let lock = punishment_creation_lock_name("target", "BAN", "server");
+
+        assert_eq!(lock.len(), 64);
+        assert_eq!(
+            lock,
+            punishment_creation_lock_name("target", "BAN", "server")
+        );
+        assert_ne!(
+            lock,
+            punishment_creation_lock_name("other-target", "BAN", "server")
+        );
     }
 
     async fn cleanup_targets(pool: &sqlx::MySqlPool, targets: &[String]) {
@@ -1021,20 +1183,27 @@ mod tests {
         ));
 
         std::thread::sleep(std::time::Duration::from_millis(2));
-        let second = match api
-            .create_punishment(
-                &Method::POST,
-                &host,
-                &cookies,
-                &key,
-                &create(target_two.clone()),
-            )
-            .await
-            .unwrap()
-        {
-            CreatePunishmentResponse::Status201_ThePunishmentWasCreatedSuccessfully(value) => value,
-            response => panic!("unexpected response: {response:?}"),
-        };
+        let second_request = create(target_two.clone());
+        let competing_request = create(target_two.clone());
+        let (second_response, competing_response) = tokio::join!(
+            api.create_punishment(&Method::POST, &host, &cookies, &key, &second_request,),
+            api.create_punishment(&Method::POST, &host, &cookies, &key, &competing_request,),
+        );
+        let mut second = None;
+        let mut conflicts = 0;
+        for response in [second_response.unwrap(), competing_response.unwrap()] {
+            match response {
+                CreatePunishmentResponse::Status201_ThePunishmentWasCreatedSuccessfully(value) => {
+                    assert!(second.replace(value).is_none());
+                }
+                CreatePunishmentResponse::Status409_AConflictingActivePunishmentAlreadyExists => {
+                    conflicts += 1;
+                }
+                response => panic!("unexpected response: {response:?}"),
+            }
+        }
+        let second = second.expect("one concurrent request must create the punishment");
+        assert_eq!(conflicts, 1);
 
         let page_one = match api
             .list_punishments(
