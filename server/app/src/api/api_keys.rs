@@ -577,6 +577,7 @@ impl Api {
                 SELECT public_id
                 FROM api_keys
                 WHERE created_by_public_id = ?
+                ORDER BY public_id
                 FOR UPDATE
                 "#,
             )
