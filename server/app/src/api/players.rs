@@ -28,13 +28,14 @@ use graph_api::models::{
 use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{MySql, QueryBuilder};
+use sqlx::{MySql, MySqlPool, QueryBuilder};
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
 const DEFAULT_PLAYERS_LIMIT: u8 = 20;
 const MAX_PLAYERS_LIMIT: u8 = 100;
+const MAX_TRANSACTION_ATTEMPTS: usize = 3;
 
 type PlayerCursor = Cursor<Uuid, Uuid>;
 
@@ -221,47 +222,25 @@ impl Players<String> for Api {
             return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
         };
 
-        let mut transaction = self
-            .default_pool
-            .begin()
-            .await
-            .map_err(log_database_error)?;
-        let request =
-            sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
-                .bind(path_params.player_id)
-                .bind(path_params.sender_id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(log_database_error)?;
-        if request.rows_affected() == 0 {
-            transaction.rollback().await.map_err(log_database_error)?;
-            return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
-        }
-
-        let (player1_id, player2_id) =
-            normalize_friendship(path_params.player_id, path_params.sender_id);
-        match sqlx::query(
-            r#"
-            INSERT INTO friendships (player1_id, player2_id)
-            VALUES (?, ?)
-            "#,
+        match create_friendship_with_retry(
+            &self.default_pool,
+            path_params.player_id,
+            path_params.sender_id,
+            FriendRequestDeletion::RequiredDirection,
         )
-        .bind(player1_id)
-        .bind(player2_id)
-        .execute(&mut *transaction)
         .await
+        .map_err(log_database_error)?
         {
-            Ok(_) => {}
-            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => {
-                transaction.rollback().await.map_err(log_database_error)?;
+            FriendshipWriteOutcome::Created => {}
+            FriendshipWriteOutcome::RequestNotFound => {
+                return Ok(AcceptPlayerFriendRequestResponse::Status404_ThePlayer);
+            }
+            FriendshipWriteOutcome::AlreadyExists => {
                 return Ok(
                     AcceptPlayerFriendRequestResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSender,
                 );
             }
-            Err(error) => return Err(log_database_error(error)),
         }
-
-        transaction.commit().await.map_err(log_database_error)?;
 
         self.publish_stream_event(friend_request_accepted_event(
             players.sender.clone(),
@@ -304,47 +283,25 @@ impl Players<String> for Api {
             return Ok(AddPlayerFriendResponse::Status404_ThePlayerOrFriendWasNotFound);
         }
 
-        let (player1_id, player2_id) =
-            normalize_friendship(path_params.player_id, path_params.friend_id);
-
-        let mut transaction = self
-            .default_pool
-            .begin()
-            .await
-            .map_err(log_database_error)?;
-        match sqlx::query(
-            r#"
-            INSERT INTO friendships (player1_id, player2_id)
-            VALUES (?, ?)
-            "#,
+        match create_friendship_with_retry(
+            &self.default_pool,
+            path_params.player_id,
+            path_params.friend_id,
+            FriendRequestDeletion::BothDirections,
         )
-        .bind(player1_id)
-        .bind(player2_id)
-        .execute(&mut *transaction)
         .await
+        .map_err(log_database_error)?
         {
-            Ok(_) => {}
-            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => return Ok(
-                AddPlayerFriendResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSpecifiedPlayer,
-            ),
-            Err(error) => return Err(log_database_error(error)),
+            FriendshipWriteOutcome::Created => {}
+            FriendshipWriteOutcome::AlreadyExists => {
+                return Ok(
+                    AddPlayerFriendResponse::Status409_ThePlayerIsAlreadyFriendsWithTheSpecifiedPlayer,
+                );
+            }
+            FriendshipWriteOutcome::RequestNotFound => {
+                unreachable!("friend requests are optional when adding a friend directly")
+            }
         }
-
-        sqlx::query(
-            r#"
-            DELETE FROM friend_requests
-            WHERE (player_id = ? AND sender_id = ?)
-               OR (player_id = ? AND sender_id = ?)
-            "#,
-        )
-        .bind(path_params.player_id)
-        .bind(path_params.friend_id)
-        .bind(path_params.friend_id)
-        .bind(path_params.player_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(log_database_error)?;
-        transaction.commit().await.map_err(log_database_error)?;
 
         let Some(players) = self
             .load_friend_request_players(path_params.player_id, path_params.friend_id)
@@ -949,103 +906,255 @@ impl Players<String> for Api {
             return Ok(UpdatePlayerByIdResponse::Status404_ThePlayerWasNotFound);
         };
 
-        let mut transaction = self
-            .default_pool
-            .begin()
-            .await
-            .map_err(log_database_error)?;
-        sqlx::query("INSERT IGNORE INTO players (id) VALUES (?)")
-            .bind(path_params.player_id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(log_database_error)?;
-
-        let mut query = QueryBuilder::<MySql>::new("UPDATE players SET ");
-        let mut updates = query.separated(", ");
-        if let Some(discord_id) = &body.discord_id {
-            updates
-                .push("discord_id = ")
-                .push_bind_unseparated(match discord_id {
-                    Nullable::Present(discord_id) => Some(discord_id),
-                    Nullable::Null => None,
-                });
-        }
-        if let Some(bio) = &body.bio {
-            updates.push("bio = ").push_bind_unseparated(match bio {
-                Nullable::Present(bio) => Some(bio),
-                Nullable::Null => None,
-            });
-        }
-        if let Some(status) = status {
-            updates.push("status = ").push_bind_unseparated(status);
-        }
-        if let Some(current_server) = &body.current_server {
-            updates
-                .push("current_server = ")
-                .push_bind_unseparated(match current_server {
-                    Nullable::Present(current_server) => Some(current_server),
-                    Nullable::Null => None,
-                });
-        }
-        if let Some(current_locale) = &body.current_locale {
-            updates
-                .push("current_locale = ")
-                .push_bind_unseparated(match current_locale {
-                    Nullable::Present(current_locale) => Some(current_locale),
-                    Nullable::Null => None,
-                });
-        }
-        if let Some(current_client_version) = &body.current_client_version {
-            updates
-                .push("current_client_version = ")
-                .push_bind_unseparated(match current_client_version {
-                    Nullable::Present(current_client_version) => Some(current_client_version),
-                    Nullable::Null => None,
-                });
-        }
-        if let Some(first_login_at) = &body.first_login_at {
-            updates
-                .push("first_login_at = ")
-                .push_bind_unseparated(match first_login_at {
-                    Nullable::Present(first_login_at) => Some(first_login_at),
-                    Nullable::Null => None,
-                });
-        }
-        if let Some(last_seen_at) = &body.last_seen_at {
-            updates
-                .push("last_seen_at = ")
-                .push_bind_unseparated(match last_seen_at {
-                    Nullable::Present(last_seen_at) => Some(last_seen_at),
-                    Nullable::Null => None,
-                });
-        }
-        query.push(" WHERE id = ").push_bind(path_params.player_id);
-
-        query
-            .build()
-            .execute(&mut *transaction)
-            .await
-            .map_err(log_database_error)?;
-
-        let record = sqlx::query_as::<_, PlayerRecord>(
-            r#"
-            SELECT id, discord_id, status, current_server, current_locale,
-                   current_client_version, bio, first_login_at, last_seen_at
-            FROM players
-            WHERE id = ?
-            "#,
+        let record = upsert_player_with_retry(
+            &self.default_pool,
+            path_params.player_id,
+            body,
+            status.as_deref(),
         )
-        .bind(path_params.player_id)
-        .fetch_one(&mut *transaction)
         .await
         .map_err(log_database_error)?;
-        transaction.commit().await.map_err(log_database_error)?;
 
         Ok(
             UpdatePlayerByIdResponse::Status200_ThePlayerWasUpdatedSuccessfully(
                 record.into_player(profile.username, can_read_discord_id(api_key)),
             ),
         )
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FriendRequestDeletion {
+    RequiredDirection,
+    BothDirections,
+}
+
+enum FriendshipWriteOutcome {
+    Created,
+    RequestNotFound,
+    AlreadyExists,
+}
+
+async fn create_friendship_with_retry(
+    pool: &MySqlPool,
+    player_id: Uuid,
+    other_id: Uuid,
+    deletion: FriendRequestDeletion,
+) -> Result<FriendshipWriteOutcome, sqlx::Error> {
+    for attempt in 1..=MAX_TRANSACTION_ATTEMPTS {
+        match create_friendship_once(pool, player_id, other_id, deletion).await {
+            Err(error) if is_mysql_deadlock(&error) && attempt < MAX_TRANSACTION_ATTEMPTS => {
+                tracing::warn!(attempt, %player_id, %other_id, "retrying friendship update after deadlock");
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the final transaction attempt always returns")
+}
+
+async fn create_friendship_once(
+    pool: &MySqlPool,
+    player_id: Uuid,
+    other_id: Uuid,
+    deletion: FriendRequestDeletion,
+) -> Result<FriendshipWriteOutcome, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+
+    let deleted = match deletion {
+        FriendRequestDeletion::RequiredDirection => {
+            sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+                .bind(player_id)
+                .bind(other_id)
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected()
+        }
+        FriendRequestDeletion::BothDirections => {
+            // Delete the two primary-key rows in a stable order. More importantly,
+            // every friendship-creation path now locks friend_requests before
+            // friendships.
+            let (first, second) = normalize_friendship(player_id, other_id);
+            let mut deleted =
+                sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+                    .bind(first)
+                    .bind(second)
+                    .execute(&mut *transaction)
+                    .await?
+                    .rows_affected();
+            deleted +=
+                sqlx::query("DELETE FROM friend_requests WHERE player_id = ? AND sender_id = ?")
+                    .bind(second)
+                    .bind(first)
+                    .execute(&mut *transaction)
+                    .await?
+                    .rows_affected();
+            deleted
+        }
+    };
+
+    if matches!(deletion, FriendRequestDeletion::RequiredDirection) && deleted == 0 {
+        transaction.rollback().await?;
+        return Ok(FriendshipWriteOutcome::RequestNotFound);
+    }
+
+    let (player1_id, player2_id) = normalize_friendship(player_id, other_id);
+    match sqlx::query(
+        r#"
+        INSERT INTO friendships (player1_id, player2_id)
+        VALUES (?, ?)
+        "#,
+    )
+    .bind(player1_id)
+    .bind(player2_id)
+    .execute(&mut *transaction)
+    .await
+    {
+        Ok(_) => {}
+        Err(sqlx::Error::Database(error)) if error.is_unique_violation() => {
+            transaction.rollback().await?;
+            return Ok(FriendshipWriteOutcome::AlreadyExists);
+        }
+        Err(error) => return Err(error),
+    }
+
+    transaction.commit().await?;
+    Ok(FriendshipWriteOutcome::Created)
+}
+
+async fn upsert_player_with_retry(
+    pool: &MySqlPool,
+    player_id: Uuid,
+    body: &UpdatePlayerByIdRequest,
+    status: Option<&str>,
+) -> Result<PlayerRecord, sqlx::Error> {
+    for attempt in 1..=MAX_TRANSACTION_ATTEMPTS {
+        match upsert_player_once(pool, player_id, body, status).await {
+            Err(error) if is_mysql_deadlock(&error) && attempt < MAX_TRANSACTION_ATTEMPTS => {
+                tracing::warn!(attempt, %player_id, "retrying player update after deadlock");
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the final transaction attempt always returns")
+}
+
+async fn upsert_player_once(
+    pool: &MySqlPool,
+    player_id: Uuid,
+    body: &UpdatePlayerByIdRequest,
+    status: Option<&str>,
+) -> Result<PlayerRecord, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+
+    // A single UPSERT avoids the shared-lock-to-exclusive-lock conversion caused by
+    // `INSERT IGNORE` followed by `UPDATE` when concurrent PATCH requests target an
+    // existing player.
+    let mut query = QueryBuilder::<MySql>::new("INSERT INTO players (id");
+    if body.discord_id.is_some() {
+        query.push(", discord_id");
+    }
+    if body.bio.is_some() {
+        query.push(", bio");
+    }
+    if status.is_some() {
+        query.push(", status");
+    }
+    if body.current_server.is_some() {
+        query.push(", current_server");
+    }
+    if body.current_locale.is_some() {
+        query.push(", current_locale");
+    }
+    if body.current_client_version.is_some() {
+        query.push(", current_client_version");
+    }
+    if body.first_login_at.is_some() {
+        query.push(", first_login_at");
+    }
+    if body.last_seen_at.is_some() {
+        query.push(", last_seen_at");
+    }
+    query.push(") VALUES (").push_bind(player_id);
+    if let Some(value) = &body.discord_id {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    if let Some(value) = &body.bio {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    if let Some(value) = status {
+        query.push(", ").push_bind(value);
+    }
+    if let Some(value) = &body.current_server {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    if let Some(value) = &body.current_locale {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    if let Some(value) = &body.current_client_version {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    if let Some(value) = &body.first_login_at {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    if let Some(value) = &body.last_seen_at {
+        query.push(", ").push_bind(nullable_ref(value));
+    }
+    query.push(") ON DUPLICATE KEY UPDATE ");
+    let mut updates = query.separated(", ");
+    if body.discord_id.is_some() {
+        updates.push("discord_id = VALUES(discord_id)");
+    }
+    if body.bio.is_some() {
+        updates.push("bio = VALUES(bio)");
+    }
+    if status.is_some() {
+        updates.push("status = VALUES(status)");
+    }
+    if body.current_server.is_some() {
+        updates.push("current_server = VALUES(current_server)");
+    }
+    if body.current_locale.is_some() {
+        updates.push("current_locale = VALUES(current_locale)");
+    }
+    if body.current_client_version.is_some() {
+        updates.push("current_client_version = VALUES(current_client_version)");
+    }
+    if body.first_login_at.is_some() {
+        updates.push("first_login_at = VALUES(first_login_at)");
+    }
+    if body.last_seen_at.is_some() {
+        updates.push("last_seen_at = VALUES(last_seen_at)");
+    }
+
+    query.build().execute(&mut *transaction).await?;
+    let record = sqlx::query_as::<_, PlayerRecord>(
+        r#"
+        SELECT id, discord_id, status, current_server, current_locale,
+               current_client_version, bio, first_login_at, last_seen_at
+        FROM players
+        WHERE id = ?
+        "#,
+    )
+    .bind(player_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(record)
+}
+
+fn nullable_ref<T>(value: &Nullable<T>) -> Option<&T> {
+    match value {
+        Nullable::Present(value) => Some(value),
+        Nullable::Null => None,
+    }
+}
+
+fn is_mysql_deadlock(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::Database(error) => error
+            .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+            .is_some_and(|error| error.number() == 1213 && error.code() == Some("40001")),
+        _ => false,
     }
 }
 
@@ -1218,6 +1327,61 @@ mod tests {
         .expect("cursor must be encoded");
 
         assert!(decode_player_cursor(Some(&encoded)).is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_partial_player_upserts_preserve_all_fields() {
+        let Ok(database_url) = std::env::var("GRAPH_TEST_DATABASE_URL") else {
+            eprintln!("GRAPH_TEST_DATABASE_URL is not set; skipping MariaDB integration test");
+            return;
+        };
+        let pool = MySqlPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("../migrations").run(&pool).await.unwrap();
+
+        let player_id = Uuid::new_v4();
+        let workers = 24;
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(workers));
+        let mut tasks = JoinSet::new();
+        for index in 0..workers {
+            let pool = pool.clone();
+            let barrier = barrier.clone();
+            tasks.spawn(async move {
+                let mut body = UpdatePlayerByIdRequest::new();
+                let status = if index % 2 == 0 {
+                    body.status = Some(PlayerStatus::Online.to_string());
+                    Some(PlayerStatus::Online.to_string())
+                } else {
+                    body.current_server = Some(Nullable::Present("lobby".to_string()));
+                    None
+                };
+                barrier.wait().await;
+                upsert_player_with_retry(&pool, player_id, &body, status.as_deref()).await
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            result.unwrap().unwrap();
+        }
+
+        let record = sqlx::query_as::<_, PlayerRecord>(
+            r#"
+            SELECT id, discord_id, status, current_server, current_locale,
+                   current_client_version, bio, first_login_at, last_seen_at
+            FROM players
+            WHERE id = ?
+            "#,
+        )
+        .bind(player_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(record.status, PlayerStatus::Online.to_string());
+        assert_eq!(record.current_server.as_deref(), Some("lobby"));
+
+        sqlx::query("DELETE FROM players WHERE id = ?")
+            .bind(player_id)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 
     fn player_record() -> PlayerRecord {
