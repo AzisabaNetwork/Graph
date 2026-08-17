@@ -109,6 +109,9 @@ async fn validate_punishments_database(pool: &MySqlPool) -> Result<(), sqlx::Err
         "SELECT 1 FROM `unpunish` LIMIT 1",
         "SELECT 1 FROM `proofs` LIMIT 1",
         "SELECT 1 FROM `events` LIMIT 1",
+        "SELECT 1 FROM `players` LIMIT 1",
+        "SELECT 1 FROM `usernameHistory` LIMIT 1",
+        "SELECT 1 FROM `ipAddressHistory` LIMIT 1",
     ] {
         sqlx::query(query).fetch_optional(pool).await?;
     }

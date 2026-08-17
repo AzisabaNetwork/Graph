@@ -59,6 +59,8 @@ paths:
     $ref: "./paths/players/players-by-id-friends-by-id.yaml"
   /punishments:
     $ref: "./paths/punishments/punishments.yaml"
+  /punishments/seen:
+    $ref: "./paths/punishments/punishments-seen-by-target.yaml"
   /punishments/{punishmentId}:
     $ref: "./paths/punishments/punishments-by-id.yaml"
   /punishments/{punishmentId}/proofs:
@@ -166,6 +168,12 @@ components:
       $ref: "./components/schemas/punishment-updated-event.yaml"
     Revocation:
       $ref: "./components/schemas/revocation.yaml"
+    SeenPlayer:
+      $ref: "./components/schemas/seen-player.yaml"
+    SeenPlayerSummary:
+      $ref: "./components/schemas/seen-player-summary.yaml"
+    SeenResult:
+      $ref: "./components/schemas/seen-result.yaml"
     StreamEvent:
       $ref: "./components/schemas/stream-event.yaml"
       discriminator:

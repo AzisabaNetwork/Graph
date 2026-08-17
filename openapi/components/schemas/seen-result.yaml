@@ -1,0 +1,26 @@
+title: SeenResult
+description: The result of a SpicyAzisaBan activity lookup.
+type: object
+required:
+  - kind
+  - players
+properties:
+  kind:
+    type: string
+    enum:
+      - player
+      - ip
+    description: Whether the target was resolved as a player or IP address.
+  player:
+    $ref: "../../openapi.yaml#/components/schemas/SeenPlayer"
+    description: Present when `kind` is `player`.
+  ip:
+    type: string
+    description: Present when `kind` is `ip`.
+  players:
+    type: array
+    description: >
+      Players that have used the target IP address. For player results, this
+      excludes the player in `player`.
+    items:
+      $ref: "../../openapi.yaml#/components/schemas/SeenPlayerSummary"

@@ -1,0 +1,48 @@
+get:
+  operationId: getPunishmentSeen
+  summary: Look up player activity
+  description: >
+    Returns the activity information shown by SpicyAzisaBan's `/seen` command.
+    The target may be a player UUID, an exact player name, or an IP address.
+    An IP-address lookup returns every player that has used that address; a
+    player lookup includes accounts that have used that player's current IP
+    address.
+  tags:
+    - punishments
+  security:
+    - apiKeyAuth:
+        - punishments:seen
+  parameters:
+    - name: target
+      in: query
+      required: true
+      description: The player UUID, player name, or IP address to look up.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    - name: ambiguous
+      in: query
+      description: Whether to match the target against any part of a player name.
+      schema:
+        type: boolean
+        default: false
+    - name: includeDummy
+      in: query
+      description: Whether to include placeholder records without any login timestamps.
+      schema:
+        type: boolean
+        default: false
+  responses:
+    "200":
+      description: The activity information was retrieved successfully.
+      content:
+        application/json:
+          schema:
+            $ref: "../../openapi.yaml#/components/schemas/SeenResult"
+    "401":
+      $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+    "403":
+      $ref: "../../openapi.yaml#/components/responses/Forbidden"
+    "404":
+      description: No matching player or IP-address history was found.
