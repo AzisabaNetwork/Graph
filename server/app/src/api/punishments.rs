@@ -17,7 +17,10 @@ use headers::Host;
 use http::Method;
 use sha2::{Digest, Sha256};
 use sqlx::{Connection, MySql, MySqlConnection, QueryBuilder};
-use std::{collections::BTreeMap, net::IpAddr};
+use std::{
+    collections::{BTreeMap, HashSet},
+    net::IpAddr,
+};
 use uuid::Uuid;
 
 const DEFAULT_LIMIT: u8 = 20;
@@ -28,6 +31,10 @@ type PunishmentCursor = Cursor<i64, u64>;
 
 fn can_read(key: &ApiKey) -> bool {
     key.has_scope(&ApiKeyScope::PunishmentsColonRead)
+}
+
+fn can_read_seen(key: &ApiKey) -> bool {
+    key.has_scope(&ApiKeyScope::PunishmentsColonSeen)
 }
 
 fn write_actor(key: &ApiKey) -> Option<Uuid> {
@@ -79,6 +86,66 @@ fn normalize_target(kind: PunishmentType, target: &str) -> Option<String> {
             .ok()
             .map(|target| target.to_string())
     }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct SeenPlayerRecord {
+    uuid: String,
+    name: String,
+    ip: Option<String>,
+    last_seen: i64,
+    first_login: i64,
+    first_login_attempt: i64,
+    last_login: i64,
+    last_login_attempt: i64,
+}
+
+impl SeenPlayerRecord {
+    fn id(&self) -> Result<Uuid, String> {
+        Uuid::parse_str(&self.uuid).map_err(|_| {
+            format!(
+                "invalid player UUID in SpicyAzisaBan database: {}",
+                self.uuid
+            )
+        })
+    }
+
+    fn into_summary(self) -> Result<SeenPlayerSummary, String> {
+        Ok(SeenPlayerSummary::new(
+            self.id()?,
+            self.name,
+            self.ip.map_or(Nullable::Null, Nullable::Present),
+            datetime_from_millis(self.last_seen)?,
+        ))
+    }
+
+    fn is_dummy(&self) -> bool {
+        self.first_login == 0
+            && self.first_login_attempt == 0
+            && self.last_login == 0
+            && self.last_login_attempt == 0
+    }
+}
+
+fn datetime_from_millis(value: i64) -> Result<DateTime<Utc>, String> {
+    DateTime::from_timestamp_millis(value)
+        .ok_or_else(|| "invalid epoch milliseconds in SpicyAzisaBan database".to_string())
+}
+
+fn nullable_datetime_from_millis(value: i64) -> Result<Nullable<DateTime<Utc>>, String> {
+    if value == 0 {
+        Ok(Nullable::Null)
+    } else {
+        datetime_from_millis(value).map(Nullable::Present)
+    }
+}
+
+fn distinct_strings(values: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values
+        .into_iter()
+        .filter(|value| seen.insert(value.clone()))
+        .collect()
 }
 
 fn end_millis(
@@ -145,6 +212,98 @@ fn punishment_type_database_value(kind: PunishmentType) -> &'static str {
 }
 
 impl Api {
+    async fn load_seen_player_by_uuid(&self, id: &str) -> Result<Option<SeenPlayerRecord>, String> {
+        sqlx::query_as::<_, SeenPlayerRecord>(
+            "SELECT uuid, name, ip, last_seen, first_login, first_login_attempt, last_login, last_login_attempt FROM players WHERE uuid = ? LIMIT 1",
+        )
+        .bind(id)
+        .fetch_optional(self.punishments_pool())
+        .await
+        .map_err(db_error)
+    }
+
+    async fn load_seen_player_by_name(
+        &self,
+        name: &str,
+        ambiguous: bool,
+    ) -> Result<Option<SeenPlayerRecord>, String> {
+        let target = ambiguous.then(|| format!("%{name}%"));
+        sqlx::query_as::<_, SeenPlayerRecord>(
+            "SELECT uuid, name, ip, last_seen, first_login, first_login_attempt, last_login, last_login_attempt FROM players WHERE LOWER(name) LIKE LOWER(?) ORDER BY last_seen DESC LIMIT 1",
+        )
+        .bind(target.as_deref().unwrap_or(name))
+        .fetch_optional(self.punishments_pool())
+        .await
+        .map_err(db_error)
+    }
+
+    async fn load_seen_players_by_ip(&self, ip: &str) -> Result<Vec<SeenPlayerSummary>, String> {
+        let records = sqlx::query_as::<_, SeenPlayerRecord>(
+            "SELECT p.uuid, p.name, p.ip, p.last_seen, p.first_login, p.first_login_attempt, p.last_login, p.last_login_attempt FROM ipAddressHistory h INNER JOIN players p ON p.uuid = h.uuid WHERE h.ip = ? GROUP BY p.uuid, p.name, p.ip, p.last_seen, p.first_login, p.first_login_attempt, p.last_login, p.last_login_attempt ORDER BY MAX(h.last_seen) DESC",
+        )
+        .bind(ip)
+        .fetch_all(self.punishments_pool())
+        .await
+        .map_err(db_error)?;
+        records
+            .into_iter()
+            .map(SeenPlayerRecord::into_summary)
+            .collect()
+    }
+
+    async fn load_seen_username_history(&self, id: &str) -> Result<Vec<String>, String> {
+        sqlx::query_scalar::<_, String>(
+            "SELECT name FROM `usernameHistory` WHERE uuid = ? ORDER BY last_seen DESC",
+        )
+        .bind(id)
+        .fetch_all(self.punishments_pool())
+        .await
+        .map(distinct_strings)
+        .map_err(db_error)
+    }
+
+    async fn load_seen_ip_history(&self, id: &str) -> Result<Vec<String>, String> {
+        sqlx::query_scalar::<_, String>(
+            "SELECT ip FROM `ipAddressHistory` WHERE uuid = ? ORDER BY last_seen DESC",
+        )
+        .bind(id)
+        .fetch_all(self.punishments_pool())
+        .await
+        .map(distinct_strings)
+        .map_err(db_error)
+    }
+
+    async fn into_seen_player(&self, record: SeenPlayerRecord) -> Result<SeenPlayer, String> {
+        let id = record.id()?;
+        let (username_history, ip_history, same_ip_players) = tokio::try_join!(
+            self.load_seen_username_history(&record.uuid),
+            self.load_seen_ip_history(&record.uuid),
+            async {
+                match record.ip.as_deref() {
+                    Some(ip) => self.load_seen_players_by_ip(ip).await,
+                    None => Ok(Vec::new()),
+                }
+            },
+        )?;
+        let same_ip_players = same_ip_players
+            .into_iter()
+            .filter(|player| player.id != id)
+            .collect();
+        Ok(SeenPlayer::new(
+            id,
+            record.name,
+            record.ip.map_or(Nullable::Null, Nullable::Present),
+            datetime_from_millis(record.last_seen)?,
+            nullable_datetime_from_millis(record.first_login)?,
+            nullable_datetime_from_millis(record.first_login_attempt)?,
+            nullable_datetime_from_millis(record.last_login)?,
+            nullable_datetime_from_millis(record.last_login_attempt)?,
+            username_history,
+            ip_history,
+            same_ip_players,
+        ))
+    }
+
     async fn load_proofs(&self, punishment_id: i64) -> Result<Vec<Proof>, String> {
         sqlx::query_as::<_, ProofRecord>(
             "SELECT id, text, public FROM proofs WHERE punish_id = ? ORDER BY id",
@@ -503,6 +662,57 @@ impl Punishments<String> for Api {
             ),
             None => Ok(GetPunishmentByIdResponse::Status404_ThePunishmentWasNotFound),
         }
+    }
+
+    async fn get_punishment_seen(
+        &self,
+        _: &Method,
+        _: &Host,
+        _: &CookieJar,
+        key: &ApiKey,
+        query: &GetPunishmentSeenQueryParams,
+    ) -> Result<GetPunishmentSeenResponse, String> {
+        if !can_read_seen(key) {
+            return Ok(
+                GetPunishmentSeenResponse::Status403_TheAuthenticatedAPIKeyLacksTheRequiredScope,
+            );
+        }
+
+        if query.target.parse::<IpAddr>().is_ok() {
+            let players = self.load_seen_players_by_ip(&query.target).await?;
+            if players.is_empty() {
+                return Ok(GetPunishmentSeenResponse::Status404_NoMatchingPlayerOrIP);
+            }
+            let mut result = SeenResult::new("ip".to_string(), players);
+            result.ip = Some(query.target.clone());
+            return Ok(
+                GetPunishmentSeenResponse::Status200_TheActivityInformationWasRetrievedSuccessfully(
+                    result,
+                ),
+            );
+        }
+
+        let record = if let Ok(id) = Uuid::parse_str(&query.target) {
+            self.load_seen_player_by_uuid(&id.to_string()).await?
+        } else {
+            self.load_seen_player_by_name(&query.target, query.ambiguous.unwrap_or(false))
+                .await?
+        };
+        let Some(record) = record else {
+            return Ok(GetPunishmentSeenResponse::Status404_NoMatchingPlayerOrIP);
+        };
+        if !query.include_dummy.unwrap_or(false) && record.is_dummy() {
+            return Ok(GetPunishmentSeenResponse::Status404_NoMatchingPlayerOrIP);
+        }
+
+        let player = self.into_seen_player(record).await?;
+        let mut result = SeenResult::new("player".to_string(), player.same_ip_players.clone());
+        result.player = Some(player);
+        Ok(
+            GetPunishmentSeenResponse::Status200_TheActivityInformationWasRetrievedSuccessfully(
+                result,
+            ),
+        )
     }
 
     async fn get_punishment_proof_by_id(
@@ -1037,6 +1247,38 @@ mod tests {
         );
         assert_eq!(with_seen("OTHER", true), "OTHER,SEEN");
         assert_eq!(with_seen("OTHER,SEEN", false), "OTHER");
+    }
+
+    #[test]
+    fn seen_helpers_match_spicyazisaban_dummy_and_history_rules() {
+        assert_eq!(
+            distinct_strings(vec![
+                "latest".to_string(),
+                "older".to_string(),
+                "latest".to_string(),
+            ]),
+            vec!["latest", "older"]
+        );
+        assert!(matches!(
+            nullable_datetime_from_millis(0),
+            Ok(Nullable::Null)
+        ));
+        assert!(matches!(
+            nullable_datetime_from_millis(1),
+            Ok(Nullable::Present(_))
+        ));
+
+        let record = SeenPlayerRecord {
+            uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            name: "dummy".to_string(),
+            ip: None,
+            last_seen: 0,
+            first_login: 0,
+            first_login_attempt: 0,
+            last_login: 0,
+            last_login_attempt: 0,
+        };
+        assert!(record.is_dummy());
     }
 
     #[test]

@@ -1,0 +1,25 @@
+type: object
+title: SeenPlayerSummary
+description: The current activity summary for a player in SpicyAzisaBan's database.
+required:
+  - id
+  - username
+  - ip
+  - lastSeenAt
+properties:
+  id:
+    type: string
+    format: uuid
+    description: The player's UUID.
+  username:
+    type: string
+    description: The player's most recently recorded name.
+  ip:
+    type:
+      - string
+      - "null"
+    description: The player's most recently recorded IP address, or `null` if it is unknown.
+  lastSeenAt:
+    type: string
+    format: date-time
+    description: The time at which the player was last seen.

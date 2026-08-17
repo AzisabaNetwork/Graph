@@ -1,0 +1,71 @@
+type: object
+title: SeenPlayer
+description: The activity information recorded for a player in SpicyAzisaBan's database.
+required:
+  - id
+  - username
+  - ip
+  - lastSeenAt
+  - firstLoginAt
+  - firstLoginAttemptAt
+  - lastLoginAt
+  - lastLoginAttemptAt
+  - usernameHistory
+  - ipHistory
+  - sameIpPlayers
+properties:
+  id:
+    type: string
+    format: uuid
+    description: The player's UUID.
+  username:
+    type: string
+    description: The player's most recently recorded name.
+  ip:
+    type:
+      - string
+      - "null"
+    description: The player's most recently recorded IP address, or `null` if it is unknown.
+  lastSeenAt:
+    type: string
+    format: date-time
+    description: The time at which the player was last seen.
+  firstLoginAt:
+    type:
+      - string
+      - "null"
+    format: date-time
+    description: The time at which the player first logged in, or `null` if unavailable.
+  firstLoginAttemptAt:
+    type:
+      - string
+      - "null"
+    format: date-time
+    description: The first recorded login attempt, or `null` if unavailable.
+  lastLoginAt:
+    type:
+      - string
+      - "null"
+    format: date-time
+    description: The last successful login, or `null` if unavailable.
+  lastLoginAttemptAt:
+    type:
+      - string
+      - "null"
+    format: date-time
+    description: The last recorded login attempt, or `null` if unavailable.
+  usernameHistory:
+    type: array
+    description: Recorded player names in most-recent-first order, without duplicates.
+    items:
+      type: string
+  ipHistory:
+    type: array
+    description: Recorded IP addresses in most-recent-first order, without duplicates.
+    items:
+      type: string
+  sameIpPlayers:
+    type: array
+    description: Other players that have used the player's current IP address.
+    items:
+      $ref: "../../openapi.yaml#/components/schemas/SeenPlayerSummary"
