@@ -18,7 +18,7 @@ use graph_api::models::{
 use graph_api::types::Nullable;
 use headers::Host;
 use http::Method;
-use sqlx::{MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 
 const DEFAULT_API_KEYS_LIMIT: u8 = 20;
@@ -99,6 +99,11 @@ impl ApiKeys<String> for Api {
             .begin()
             .await
             .map_err(log_database_error)?;
+        if let Some(player_id) = player_id {
+            if !lock_player(&mut transaction, player_id).await? {
+                return Ok(CreateApiKeyResponse::Status400_TheRequestIsInvalid);
+            }
+        }
         sqlx::query(
             r#"
             INSERT INTO api_keys
@@ -407,6 +412,12 @@ impl ApiKeys<String> for Api {
             return Ok(UpdateApiKeyByIdResponse::Status404_TheAPIKeyWasNotFound);
         }
 
+        if let Some(Some(player_id)) = requested_player_id {
+            if !lock_player(&mut transaction, player_id).await? {
+                return Ok(UpdateApiKeyByIdResponse::Status400_TheRequestIsInvalid);
+            }
+        }
+
         if let Some(name) = &body.name {
             sqlx::query("UPDATE api_keys SET name = ? WHERE public_id = ?")
                 .bind(name)
@@ -665,6 +676,18 @@ fn delegated_player_id(
     }
 }
 
+async fn lock_player(
+    transaction: &mut Transaction<'_, MySql>,
+    player_id: uuid::Uuid,
+) -> Result<bool, String> {
+    sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM players WHERE id = ? LOCK IN SHARE MODE")
+        .bind(player_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map(|player| player.is_some())
+        .map_err(log_database_error)
+}
+
 fn log_database_error(error: sqlx::Error) -> String {
     tracing::error!(?error, "API key database operation failed");
     error.to_string()
@@ -768,6 +791,27 @@ mod tests {
             Utc::now(),
             Nullable::Null,
         );
+
+        let mut missing_player_request = CreateApiKeyRequest::new(
+            "missing player integration key".to_string(),
+            vec!["punishments:write".to_string()],
+        );
+        missing_player_request.player_id = Some(Nullable::Present(uuid::Uuid::new_v4()));
+        let response = api
+            .create_api_key(
+                &Method::POST,
+                &test_host(),
+                &CookieJar::new(),
+                &parent,
+                &missing_player_request,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            response,
+            CreateApiKeyResponse::Status400_TheRequestIsInvalid
+        ));
+
         let mut request = CreateApiKeyRequest::new(
             "linked integration key".to_string(),
             vec!["punishments:write".to_string()],
@@ -788,6 +832,35 @@ mod tests {
             response => panic!("unexpected response: {response:?}"),
         };
         assert_eq!(created.player_id, Nullable::Present(player_id));
+
+        let stored_player_id = sqlx::query_scalar::<_, uuid::Uuid>(
+            "SELECT player_id FROM api_key_players WHERE api_key_public_id = ?",
+        )
+        .bind(&created.public_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_player_id, player_id);
+
+        let mut update = UpdateApiKeyByIdRequest::new();
+        update.player_id = Some(Nullable::Present(uuid::Uuid::new_v4()));
+        let response = api
+            .update_api_key_by_id(
+                &Method::PATCH,
+                &test_host(),
+                &CookieJar::new(),
+                &parent,
+                &UpdateApiKeyByIdPathParams {
+                    api_key_id: created.public_id.clone(),
+                },
+                &update,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            response,
+            UpdateApiKeyByIdResponse::Status400_TheRequestIsInvalid
+        ));
 
         let stored_player_id = sqlx::query_scalar::<_, uuid::Uuid>(
             "SELECT player_id FROM api_key_players WHERE api_key_public_id = ?",
